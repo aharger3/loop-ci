@@ -1,0 +1,171 @@
+name: The Loop
+
+# Trigger = pushing a spec. That is the whole dispatcher.
+# No cron: Austin disabled every scheduled loop run on 2026-07-30 and asked more than once
+# that it stay that way. A push is a deliberate act, so this honours "runs are manual" while
+# removing the part that was actually work - opening a session and playing dispatcher.
+on:
+  push:
+    paths: ['specs/**.md']
+  workflow_dispatch:
+    inputs:
+      spec:
+        description: 'Single spec filename to run (blank = every specs/*.md with status: ready)'
+        required: false
+
+# Replaces loop\.run.lock. Two overlapping runs used to clobber one tmp\spec-parsed.json and
+# the only symptom was a RUN line with no EXIT (2026-07-29 00:49).
+concurrency:
+  group: loop
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.p.outputs.matrix }}
+      count:  ${{ steps.p.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Parse EVERY spec before a single token is spent. This is the old -WhatIf, and it is
+      # the reason a bad spec costs nothing instead of costing a night.
+      - id: p
+        shell: pwsh
+        run: |
+          $only = '${{ inputs.spec }}'
+          $specs = if ($only) { @(Get-Item "specs/$only") } else { Get-ChildItem specs -Filter *.md }
+          $rows = @()
+          foreach ($s in $specs) {
+            $json = "parsed-$($s.BaseName).json"
+            pwsh ci/parse-spec.ps1 -Spec $s.FullName -Out $json
+            if ($LASTEXITCODE -ne 0) { throw "spec $($s.Name) failed to parse - nothing ran" }
+            $p = Get-Content $json -Raw | ConvertFrom-Json
+            $pending = @($p.tasks | Where-Object { -not $_.done }).Count
+            if ($pending -eq 0) { Write-Host "$($s.Name): nothing pending, skipping"; continue }
+            $rows += @{ spec = $s.Name; version = $p.version; repo = $p.repo; pending = $pending }
+          }
+          $m = @{ include = $rows } | ConvertTo-Json -Depth 6 -Compress
+          "matrix=$m" >> $env:GITHUB_OUTPUT
+          "count=$($rows.Count)" >> $env:GITHUB_OUTPUT
+
+      - name: Notify start + ETA
+        if: steps.p.outputs.count != '0'
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: pwsh
+        run: |
+          $m = '${{ steps.p.outputs.matrix }}' | ConvertFrom-Json
+          # Specs run in parallel, so the ETA is the LONGEST spec, not the sum. 25 min is the
+          # per-task ceiling; real rows finish well under it, so this reads as a worst case.
+          $eta = ($m.include | ForEach-Object { $_.pending * 25 } | Measure-Object -Maximum).Maximum
+          $lines = $m.include | ForEach-Object { "  $($_.version) - $($_.pending) tasks -> $($_.repo)" }
+          @("$($m.include.Count) spec(s) started, running in parallel.", "", $lines, "",
+            "ETA: under $eta min.") | Set-Content body.txt
+          bash ci/notify.sh start "Loop started - ETA $eta min" body.txt
+
+  run:
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 330          # under the 6h hosted-runner ceiling; replaces loop-guard.ps1
+    strategy:
+      fail-fast: false            # one spec dying must never take the others with it
+      max-parallel: 20
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout target repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repo }}
+          token: ${{ secrets.LOOP_GH_TOKEN }}
+          path: work
+
+      - run: npm i -g @anthropic-ai/claude-code
+
+      - shell: pwsh
+        run: pwsh ci/parse-spec.ps1 -Spec "specs/${{ matrix.spec }}" -Out parsed.json
+
+      - name: Execute
+        shell: pwsh
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ZAI_API_KEY:       ${{ secrets.ZAI_API_KEY }}
+          DEEPSEEK_API_KEY:  ${{ secrets.DEEPSEEK_API_KEY }}
+        run: pwsh ci/run-spec.ps1 -Parsed parsed.json -WorkDir "$PWD/work" -Out "result-${{ matrix.version }}.json"
+
+      # A branch + PR, never a push to main. "90% completion is good" only works if a partial
+      # result is reviewable instead of already merged.
+      - name: Open PR with the work
+        env:
+          GH_TOKEN: ${{ secrets.LOOP_GH_TOKEN }}
+        run: |
+          cd work
+          git config user.name  "the-loop"
+          git config user.email "loop@austinharger.com"
+          if [ -z "$(git status --porcelain)" ]; then echo "no file changes"; exit 0; fi
+          git checkout -b "loop/${{ matrix.version }}-${{ github.run_id }}"
+          git add -A
+          git commit -m "loop: ${{ matrix.version }}"
+          git push -u origin HEAD
+          gh pr create --fill --title "loop: ${{ matrix.version }}" \
+            --body "Automated run. See ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: result-${{ matrix.version }}
+          path: result-*.json
+
+  report:
+    needs: [plan, run]
+    if: always() && needs.plan.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: results, merge-multiple: true }
+
+      # The readable summary lives on the run page, rendered. ntfy carries a link and a count,
+      # never the report itself - dumping the rollup into a push notification is what made the
+      # old channel unreadable.
+      - name: Summary + final notification
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: pwsh
+        run: |
+          $all = Get-ChildItem results -Filter *.json -Recurse | ForEach-Object { Get-Content $_ -Raw | ConvertFrom-Json }
+          $md = @("# Loop run", "")
+          $blocked = @(); $recommend = @()
+          foreach ($r in $all) {
+            $md += "## $($r.version) - $($r.done)/$($r.total) done"
+            $md += "", "**Target:** $($r.target)", "", "| task | state | model | note |", "|---|---|---|---|"
+            foreach ($t in $r.tasks) { $md += "| $($t.id) | $($t.state) | $($t.tier) | $($t.note) |" }
+            $md += ""
+            $blocked += $r.blocked
+            # A row that failed on the top tier is the signal worth a nudge: not broken, but
+            # not progressing either. That is the whole "recommendation" channel.
+            $failed = @($r.tasks | Where-Object { $_.state -eq 'failed' })
+            if ($failed.Count -and $r.done -gt 0) { $recommend += "$($r.version): $($failed.Count) row(s) failed but $($r.done) landed - review the PR and re-push the spec to retry just those." }
+          }
+          ($md -join "`n") | Set-Content $env:GITHUB_STEP_SUMMARY
+
+          $totDone = ($all | Measure-Object done -Sum).Sum
+          $totAll  = ($all | Measure-Object total -Sum).Sum
+
+          if ($blocked.Count) {
+            @("$($blocked.Count) row(s) blocked. Exact steps to get it running again:", "",
+              ($blocked | ForEach-Object { "- $_" })) | Set-Content body.txt
+            bash ci/notify.sh blocked "Loop blocked - $($blocked.Count) row(s) need you" body.txt
+          }
+          if ($recommend.Count) {
+            $recommend | Set-Content body.txt
+            bash ci/notify.sh recommend "Loop recommendation" body.txt
+          }
+          @("$totDone of $totAll tasks done across $($all.Count) spec(s).", "",
+            "Full table on the run page. PRs are open on the target repos.") | Set-Content body.txt
+          bash ci/notify.sh done "Loop done - $totDone/$totAll" body.txt
