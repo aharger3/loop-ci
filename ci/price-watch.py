@@ -19,9 +19,11 @@ THRESHOLD = 0.25                      # 25% move is worth a push notification; 5
 SNAP = os.path.join(os.path.dirname(__file__), "price-snapshot.json")
 
 # What each tier runs today. Keep in sync with the TIERS table in run-spec.ps1.
+# GLM is the CODING tier, not a grunt tier - it exists to write code, and calling it "bulk"
+# is what made the first report read as if it were interchangeable with flash.
 STACK = {
-    "grunt":    "deepseek/deepseek-v4-flash",
-    "bulk":     "z-ai/glm-5.2",
+    "grunt":  "deepseek/deepseek-v4-flash",
+    "coding": "z-ai/glm-5.2",
 }
 
 def fetch():
