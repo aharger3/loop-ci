@@ -45,11 +45,18 @@ $TIERS = @{
     base   = ''                                     # native api.anthropic.com
     resume = 'Add repo secret ANTHROPIC_API_KEY (Anthropic console key), then re-run the job.'
   }
+  # GLM points at OpenRouter, not Z.ai, until Austin's $30 of OpenRouter credit is spent.
+  # 2026-08-02: the Z.ai key authenticates but the account returns 429 code 1113
+  # "Insufficient balance or no resource package" - a valid key with nothing behind it.
+  # OpenRouter publishes an Anthropic-compatible endpoint (the "Anthropic Skin") at
+  # https://openrouter.ai/api - note NO /v1, Claude Code appends /v1/messages itself. The
+  # usual failure is using the OpenAI base URL .../api/v1, which 404s.
+  # To flip back to Z.ai once the credit is gone: swap base + secret on this one block.
   glm = @{
-    model  = 'glm-5.2'
-    secret = 'ZAI_API_KEY'
-    base   = 'https://api.z.ai/api/anthropic'
-    resume = 'Create a key at z.ai -> API keys, then: gh secret set ZAI_API_KEY --repo aharger3/loop-ci, then re-run the job.'
+    model  = 'z-ai/glm-5.2'
+    secret = 'OPENROUTER_API_KEY'
+    base   = 'https://openrouter.ai/api'
+    resume = 'OpenRouter credit is out. Either top it up, or flip the glm tier in ci/run-spec.ps1 back to base=https://api.z.ai/api/anthropic secret=ZAI_API_KEY model=glm-5.2 (that key is already set) after attaching a GLM Coding Plan at z.ai -> Billing.'
   }
   deepseek = @{
     model  = 'deepseek-v4-flash'

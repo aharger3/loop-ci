@@ -92,9 +92,10 @@ jobs:
       - name: Execute
         shell: pwsh
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          ZAI_API_KEY:       ${{ secrets.ZAI_API_KEY }}
-          DEEPSEEK_API_KEY:  ${{ secrets.DEEPSEEK_API_KEY }}
+          ANTHROPIC_API_KEY:  ${{ secrets.ANTHROPIC_API_KEY }}
+          ZAI_API_KEY:        ${{ secrets.ZAI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          DEEPSEEK_API_KEY:   ${{ secrets.DEEPSEEK_API_KEY }}
         run: pwsh ci/run-spec.ps1 -Parsed parsed.json -WorkDir "$PWD/work" -Out "result-${{ matrix.version }}.json"
 
       # A branch + PR, never a push to main. "90% completion is good" only works if a partial
