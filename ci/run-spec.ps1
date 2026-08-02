@@ -28,12 +28,14 @@ $plan = Get-Content $Parsed -Raw -Encoding UTF8 | ConvertFrom-Json
 # The spec's `model:` column records INTENT ("this row needs judgment"). This function is the
 # only place that decides a vendor, so the ladder moves in one edit. Austin 2026-08-02:
 # opus while console credits last, glm-5.2 becomes top when they run out, deepseek for grunt.
+# DEEPSEEK DISABLED 2026-08-02 - burned the paid DeepSeek account (856 calls on 8/1 alone).
+# Every deepseek/auto/free-ladder/grunt/blank task now lands on glm (OpenRouter credit).
 function Tier($model) {
   $m = ($model | ForEach-Object { $_ }) -as [string]
   $m = $m.ToLower()
   if ($m -match 'opus|fable|sonnet|claude') { return 'opus' }
   if ($m -match 'glm|z-ai|zai')             { return 'glm' }
-  return 'deepseek'   # deepseek | auto/* | free-ladder | grunt | blank all land here
+  return 'glm'   # DEEPSEEK OFF 8/2: deepseek | auto/* | free-ladder | grunt | blank land here
 }
 
 # Each tier is (env block, model id, which secret must exist, how to fix it if missing).
@@ -58,6 +60,9 @@ $TIERS = @{
     base   = 'https://openrouter.ai/api'
     resume = 'OpenRouter credit is out. Either top it up, or flip the glm tier in ci/run-spec.ps1 back to base=https://api.z.ai/api/anthropic secret=ZAI_API_KEY model=glm-5.2 (that key is already set) after attaching a GLM Coding Plan at z.ai -> Billing.'
   }
+  # DISABLED 2026-08-02 (Austin: burned paid DeepSeek). Tier() no longer returns 'deepseek',
+  # so this block is unreachable. Kept so re-enabling is a one-line flip in Tier() + is_active
+  # on the OmniRoute provider, not a rewrite.
   deepseek = @{
     model  = 'deepseek-v4-flash'
     secret = 'DEEPSEEK_API_KEY'
