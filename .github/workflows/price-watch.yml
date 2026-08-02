@@ -1,0 +1,27 @@
+name: Price watch
+
+# Monthly, and silent unless there is something to change. This is the ONLY schedule in this
+# repo - the loop itself is never scheduled (Austin disabled every cron on 2026-07-30 and has
+# asked more than once that it stay that way). This does not run builds and spends no tokens;
+# it reads a public price list.
+on:
+  schedule:
+    - cron: '0 15 1 * *'      # 1st of the month, 15:00 UTC = 11am ET
+  workflow_dispatch:
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@v4
+      - run: python ci/price-watch.py
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      # The snapshot must persist or every month looks like month one and everything reads
+      # as "new". Committed straight to main: it is generated data, not a decision.
+      - run: |
+          git config user.name the-loop && git config user.email loop@austinharger.com
+          git add ci/price-snapshot.json
+          git diff --staged --quiet || git commit -m "price snapshot [skip ci]" && git push
