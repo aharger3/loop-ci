@@ -186,8 +186,21 @@ jobs:
             $blocked += $r.blocked
             # A row that failed on the top tier is the signal worth a nudge: not broken, but
             # not progressing either. That is the whole "recommendation" channel.
-            $failed = @($r.tasks | Where-Object { $_.state -eq 'failed' })
-            if ($failed.Count -and $r.done -gt 0) { $recommend += "$($r.version): $($failed.Count) row(s) failed but $($r.done) landed - review the PR and re-push the spec to retry just those." }
+            # Austin 2026-08-02: deciding the obvious next step is work he does not want, and
+            # having it decided for him is the point. So this DOES recommend the next version.
+            # What it must never do is what v3.0's T13 did on 2026-08-01: mark itself done and
+            # advance the version on a run that failed verification. The difference is that
+            # $r.tasks state is written by the RUNNER, not by the model claiming its own row
+            # passed - so a recommendation can only ever be built out of rows that really ran.
+            $failed = @($r.tasks | Where-Object { $_.state -ne 'done' -and $_.state -ne 'skipped' })
+            if ($failed.Count -and $r.done -gt 0) {
+              $ids = ($failed | ForEach-Object { $_.id }) -join ', '
+              $recommend += "$($r.version): $($r.done) landed, $($failed.Count) did not ($ids)." +
+                            " Next version should carry those forward -- run: /plan $($r.version)"
+            }
+            elseif ($r.done -eq $r.total -and $r.total -gt 0) {
+              $recommend += "$($r.version): all $($r.done) rows landed. Pick the next target -- run: /plan"
+            }
           }
           ($md -join "`n") | Set-Content $env:GITHUB_STEP_SUMMARY
 
