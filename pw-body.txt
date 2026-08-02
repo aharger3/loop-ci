@@ -1,2 +1,0 @@
-- grunt: qwen/qwen3.7-flash is ~74% cheaper at $0.030/$0.130 with 1000k ctx. Swap = one env block in ci/run-spec.ps1.
-- bulk: qwen/qwen3.7-flash is ~88% cheaper at $0.030/$0.130 with 1000k ctx. Swap = one env block in ci/run-spec.ps1.
