@@ -130,6 +130,43 @@ jobs:
       - uses: actions/download-artifact@v4
         with: { path: results, merge-multiple: true }
 
+      # Austin 2026-08-02: "My obsidian projects are always outdated." They were outdated
+      # because updating them was a separate manual step that competed with doing the work.
+      # So it is not a step - it happens here, every run, on the cheapest tier, as a PR.
+      # A spec opts in with `doc: Projects/TradingBot.md`; no doc: line, nothing happens.
+      - name: Refresh the vault project doc
+        env:
+          ANTHROPIC_BASE_URL:  https://api.deepseek.com/anthropic
+          ANTHROPIC_AUTH_TOKEN: ${{ secrets.DEEPSEEK_API_KEY }}
+          GH_TOKEN: ${{ secrets.LOOP_GH_TOKEN }}
+        run: |
+          docs=$(jq -r '.doc // empty' results/*.json | sort -u)
+          [ -z "$docs" ] && { echo "no doc: field in any spec"; exit 0; }
+          git clone --depth 1 "https://x-access-token:$GH_TOKEN@github.com/aharger3/obsidian-vault.git" vault
+          npm i -g @anthropic-ai/claude-code
+          cd vault
+          for d in $docs; do
+            cat ../results/*.json > /tmp/r.json
+            claude -p --model deepseek-v4-flash --permission-mode bypassPermissions <<EOF
+          Rewrite the project doc "$d" in this vault from the run results below.
+
+          $(cat /tmp/r.json)
+
+          Rules: keep it MINIMAL and current — it is read as the reference for the next plan,
+          so stale or padded text actively causes bad specs. Delete anything the results show
+          is finished or wrong. Keep four sections: what it is, current state, what's next,
+          open questions. No changelog, no history, no narration of this run. If the results
+          show the project is working well enough to be a product, say so in one line under
+          current state so Austin can decide whether to archive it.
+          EOF
+          done
+          if [ -z "$(git status --porcelain)" ]; then echo "doc already current"; exit 0; fi
+          git config user.name the-loop && git config user.email loop@austinharger.com
+          git checkout -b "doc/${{ github.run_id }}"
+          git add -A && git commit -m "loop: refresh project docs"
+          git push -u origin HEAD
+          gh pr create --fill --title "loop: refresh project docs"
+
       # The readable summary lives on the run page, rendered. ntfy carries a link and a count,
       # never the report itself - dumping the rollup into a push notification is what made the
       # old channel unreadable.

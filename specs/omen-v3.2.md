@@ -3,6 +3,7 @@
 status: ready
 version: v3.2-fix-alpaca-baseline
 repo: aharger3/tradingbot
+doc: Projects/TradingBot.md
 previous: omen-v3.1.md - T2-T6 completed for one_candle_rule
 
 target: Fix the Alpaca paper account 403 Forbidden issue so that the frozen baseline can accumulate trades.

@@ -40,6 +40,7 @@ function SpecField($name) {
 }
 
 $repo    = SpecField 'repo'
+$doc     = SpecField 'doc'      # optional: vault path, e.g. Projects/TradingBot.md
 $version = SpecField 'version'
 if (-not $version) { $version = [IO.Path]::GetFileNameWithoutExtension($Spec) }
 $status  = SpecField 'status'
@@ -182,6 +183,7 @@ if ($dangling) { Fail ("depends-on names a task not in the spec: " + ($dangling 
 
 $payload = [ordered]@{
   repo            = $repo
+  doc             = $doc
   version         = $version
   spec            = $Spec
   successCriteria = (SpecField 'target')

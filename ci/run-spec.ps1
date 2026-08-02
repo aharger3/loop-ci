@@ -209,6 +209,7 @@ $blocked = @($results | Where-Object { $_.state -eq 'blocked' } |
 $payload = [ordered]@{
   version = $plan.version
   repo    = $plan.repo
+  doc     = $plan.doc
   spec    = $plan.spec
   target  = $plan.successCriteria
   done    = $done
