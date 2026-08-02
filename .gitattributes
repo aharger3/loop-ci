@@ -1,0 +1,5 @@
+# Runners are Linux. A .sh checked out with CRLF dies on "bash: : command not found",
+# and pwsh here-strings mis-parse the same way. Force LF regardless of the authoring OS.
+* text=auto eol=lf
+*.sh text eol=lf
+*.ps1 text eol=lf
