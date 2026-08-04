@@ -135,18 +135,19 @@ jobs:
       # because updating them was a separate manual step that competed with doing the work.
       # So it is not a step - it happens here, every run, on the cheapest tier, as a PR.
       # A spec opts in with `doc: Projects/TradingBot.md`; no doc: line, nothing happens.
+      # DeepSeek removed here 2026-08-03. --model pins only the MAIN turn; Claude Code's
+      # background calls (summarisation, title/topic, subagents) send claude-* ids and the
+      # vendor resolves those itself - on DeepSeek that landed on deepseek-v4-pro while every
+      # visible flag said flash. Austin: DeepSeek Pro is never called again without him, and
+      # a fallback must be something else. So this runs on the same glm tier as everything
+      # else, and the three DEFAULT pins below leave nothing for a vendor to resolve.
       - name: Refresh the vault project doc
         env:
-          ANTHROPIC_BASE_URL:  https://api.deepseek.com/anthropic
-          ANTHROPIC_AUTH_TOKEN: ${{ secrets.DEEPSEEK_API_KEY }}
-          # --model only covers the MAIN turn. Claude Code's background calls (summarisation,
-          # title/topic, subagents) send claude-* ids, and DeepSeek's Anthropic endpoint
-          # resolves those to a model of its choosing - which is how deepseek-v4-pro got
-          # billed while every visible flag said flash. Pin all three, then nothing is left
-          # to resolve. Austin 2026-08-03: flash is the ONLY DeepSeek model allowed.
-          ANTHROPIC_DEFAULT_OPUS_MODEL:   deepseek-v4-flash
-          ANTHROPIC_DEFAULT_SONNET_MODEL: deepseek-v4-flash
-          ANTHROPIC_DEFAULT_HAIKU_MODEL:  deepseek-v4-flash
+          ANTHROPIC_BASE_URL:  https://openrouter.ai/api
+          ANTHROPIC_AUTH_TOKEN: ${{ secrets.OPENROUTER_API_KEY }}
+          ANTHROPIC_DEFAULT_OPUS_MODEL:   z-ai/glm-5.2
+          ANTHROPIC_DEFAULT_SONNET_MODEL: z-ai/glm-5.2
+          ANTHROPIC_DEFAULT_HAIKU_MODEL:  z-ai/glm-5.2
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1'
           GH_TOKEN: ${{ secrets.LOOP_GH_TOKEN }}
         run: |
@@ -157,7 +158,7 @@ jobs:
           cd vault
           for d in $docs; do
             cat ../results/*.json > /tmp/r.json
-            claude -p --model deepseek-v4-flash --permission-mode bypassPermissions <<EOF
+            claude -p --model z-ai/glm-5.2 --permission-mode bypassPermissions <<EOF
           Rewrite the project doc "$d" in this vault from the run results below.
 
           $(cat /tmp/r.json)
