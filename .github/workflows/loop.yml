@@ -139,6 +139,15 @@ jobs:
         env:
           ANTHROPIC_BASE_URL:  https://api.deepseek.com/anthropic
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.DEEPSEEK_API_KEY }}
+          # --model only covers the MAIN turn. Claude Code's background calls (summarisation,
+          # title/topic, subagents) send claude-* ids, and DeepSeek's Anthropic endpoint
+          # resolves those to a model of its choosing - which is how deepseek-v4-pro got
+          # billed while every visible flag said flash. Pin all three, then nothing is left
+          # to resolve. Austin 2026-08-03: flash is the ONLY DeepSeek model allowed.
+          ANTHROPIC_DEFAULT_OPUS_MODEL:   deepseek-v4-flash
+          ANTHROPIC_DEFAULT_SONNET_MODEL: deepseek-v4-flash
+          ANTHROPIC_DEFAULT_HAIKU_MODEL:  deepseek-v4-flash
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1'
           GH_TOKEN: ${{ secrets.LOOP_GH_TOKEN }}
         run: |
           docs=$(jq -r '.doc // empty' results/*.json | sort -u)

@@ -142,6 +142,15 @@ foreach ($t in $ordered) {
   if ($cfg.base) { $env:ANTHROPIC_BASE_URL = $cfg.base; $env:ANTHROPIC_AUTH_TOKEN = $key }
   else           { $env:ANTHROPIC_API_KEY = $key }
 
+  # --model pins the MAIN turn only. Claude Code's background calls (summarisation, title,
+  # subagents) send claude-* ids, and a third-party Anthropic endpoint resolves those to
+  # whatever it likes - on DeepSeek that is deepseek-v4-pro, i.e. the expensive model gets
+  # billed while every visible flag says flash. Pinning all three leaves nothing to resolve.
+  $env:ANTHROPIC_DEFAULT_OPUS_MODEL   = $cfg.model
+  $env:ANTHROPIC_DEFAULT_SONNET_MODEL = $cfg.model
+  $env:ANTHROPIC_DEFAULT_HAIKU_MODEL  = $cfg.model
+  $env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1'
+
   $prompt = @"
 You are executing task $($t.id) of master spec $($plan.version), working in $WorkDir.
 
