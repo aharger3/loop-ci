@@ -1,4 +1,4 @@
-name: The Loop
+﻿name: The Loop
 
 # Trigger = pushing a spec. That is the whole dispatcher.
 # No cron: Austin disabled every scheduled loop run on 2026-07-30 and asked more than once
@@ -163,7 +163,7 @@ jobs:
 
           $(cat /tmp/r.json)
 
-          Rules: keep it MINIMAL and current — it is read as the reference for the next plan,
+          Rules: keep it MINIMAL and current �?" it is read as the reference for the next plan,
           so stale or padded text actively causes bad specs. Delete anything the results show
           is finished or wrong. Keep four sections: what it is, current state, what's next,
           open questions. No changelog, no history, no narration of this run. If the results
@@ -227,6 +227,18 @@ jobs:
             $recommend | Set-Content body.txt
             bash ci/notify.sh recommend "Loop recommendation" body.txt
           }
+          # Austin 2026-08-05: counts alone don't tell him what happened. One line per DONE
+          # task (its own resultLine, not a re-summary of it) is the highlight; the full
+          # per-task table with target/model/state stays on $GITHUB_STEP_SUMMARY (built
+          # above) so the notification body stays short and the depth is one tap away.
+          $highlights = foreach ($r in $all) {
+            "$($r.version):"
+            foreach ($t in $r.tasks | Where-Object { $_.state -eq 'done' }) {
+              $note = $t.note; if ($note.Length -gt 90) { $note = $note.Substring(0, 90) + '...' }
+              "  $($t.id) - $note"
+            }
+          }
           @("$totDone of $totAll tasks done across $($all.Count) spec(s).", "",
-            "Full table on the run page. PRs are open on the target repos.") | Set-Content body.txt
+            $highlights, "",
+            "Full per-task table (target, model, every state): $env:RUN_URL") | Set-Content body.txt
           bash ci/notify.sh done "Loop done - $totDone/$totAll" body.txt
