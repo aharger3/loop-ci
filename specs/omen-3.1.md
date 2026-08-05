@@ -18,7 +18,7 @@ Replaced by `TradingBot\research\RUNBOOK-omen-3.1.md`, run at the PC.
 
 # OMEN 3.1 - Cluster the ledger, finish the triage, mine the keeper frames
 
-status: ready
+status: void
 version: omen-3.1
 repo: aharger3/tradingbot
 

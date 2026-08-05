@@ -1,4 +1,4 @@
-# run-spec.ps1 - execute one parsed spec's tasks, in dependency order, on a CI runner.
+﻿# run-spec.ps1 - execute one parsed spec's tasks, in dependency order, on a CI runner.
 #
 # This replaces run-spec.js (36k, a Claude Code Workflow) and everything that propped it up.
 # It is small because GitHub Actions already owns the hard parts:
@@ -151,13 +151,27 @@ foreach ($t in $ordered) {
   $env:ANTHROPIC_DEFAULT_HAIKU_MODEL  = $cfg.model
   $env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1'
 
-  $prompt = @"
+  $stamp = Get-Date
+  $priorNote = $null
+  $row = $null
+
+  # One retry, framed as a bug-fix pass, before a row is finalized as failed. The retry gets
+  # the first attempt's own note as context ("your last attempt said X - fix it and make
+  # DONE-WHEN pass"), same tier, same worker - not a downgrade, not a different model. Two
+  # tries total; a row that fails twice is a real BLOCKED/failed, not a flake.
+  for ($attempt = 1; $attempt -le 2; $attempt++) {
+
+    $fixNote = if ($priorNote) {
+      "`n`nATTEMPT $attempt of 2 - this is a bug-fix pass. Your previous attempt on this exact task reported: `"$priorNote`". The done-when check did not pass. Find and fix what's actually wrong - do not repeat the same approach that just failed.`n"
+    } else { '' }
+
+    $prompt = @"
 You are executing task $($t.id) of master spec $($plan.version), working in $WorkDir.
 
 $($t.prompt)
 
 DONE-WHEN: $($t.doneWhen)
-
+$fixNote
 Do the work. Edit files directly. Then print, as the LAST thing in your output, one line of
 JSON and nothing after it:
 {"done": true|false, "resultLine": "one sentence on what you actually did or why not"}
@@ -165,51 +179,56 @@ Set done=false honestly if the done-when test does not pass. A false 'done' is w
 failure, because it checks a row off that nobody did.
 "@
 
-  Write-Host "::group::$($t.id) [$tier -> $($cfg.model)]"
-  $stamp = Get-Date
+    Write-Host "::group::$($t.id) attempt $attempt [$tier -> $($cfg.model)]"
 
-  # The prompt rides on STDIN, never argv. Passing it as an argument splits on spaces and the
-  # model receives one word - a bug that silently ate three runs on 2026-07-28 and looks
-  # exactly like a model refusing to use its tools.
-  $inFile  = [IO.Path]::GetTempFileName()
-  $outFile = [IO.Path]::GetTempFileName()
-  $errFile = [IO.Path]::GetTempFileName()
-  [IO.File]::WriteAllText($inFile, $prompt, (New-Object Text.UTF8Encoding($false)))
+    # The prompt rides on STDIN, never argv. Passing it as an argument splits on spaces and the
+    # model receives one word - a bug that silently ate three runs on 2026-07-28 and looks
+    # exactly like a model refusing to use its tools.
+    $inFile  = [IO.Path]::GetTempFileName()
+    $outFile = [IO.Path]::GetTempFileName()
+    $errFile = [IO.Path]::GetTempFileName()
+    [IO.File]::WriteAllText($inFile, $prompt, (New-Object Text.UTF8Encoding($false)))
 
-  $p = Start-Process -FilePath 'claude' -PassThru -NoNewWindow `
-        -ArgumentList @('-p','--model',$cfg.model,'--permission-mode','bypassPermissions') `
-        -WorkingDirectory $WorkDir `
-        -RedirectStandardInput $inFile `
-        -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+    $p = Start-Process -FilePath 'claude' -PassThru -NoNewWindow `
+          -ArgumentList @('-p','--model',$cfg.model,'--permission-mode','bypassPermissions') `
+          -WorkingDirectory $WorkDir `
+          -RedirectStandardInput $inFile `
+          -RedirectStandardOutput $outFile -RedirectStandardError $errFile
 
-  if (-not $p.WaitForExit($TaskTimeoutMin * 60 * 1000)) {
-    try { $p.Kill($true) } catch {}
-    $results += [ordered]@{ id=$t.id; state='failed'; tier=$tier; note="timed out after $TaskTimeoutMin min" }
-    Write-Host "::endgroup::"
-    continue
-  }
-
-  $stdout = (Get-Content $outFile -Raw -Encoding UTF8) ?? ''
-  Write-Host $stdout
-  Write-Host "::endgroup::"
-
-  # Take the LAST JSON object carrying a "done" key. Everything else is prose around it.
-  $parsed = $null
-  foreach ($m in [regex]::Matches($stdout, '\{[^{}]*"done"[\s\S]*?\}')) {
-    try { $o = $m.Value | ConvertFrom-Json; if ($null -ne $o.done) { $parsed = $o } } catch {}
-  }
-
-  $mins = [math]::Round(((Get-Date) - $stamp).TotalMinutes, 1)
-  if ($parsed) {
-    $results += [ordered]@{
-      id=$t.id; state=($(if ($parsed.done) {'done'} else {'failed'})); tier=$tier
-      note=$parsed.resultLine; minutes=$mins
+    if (-not $p.WaitForExit($TaskTimeoutMin * 60 * 1000)) {
+      try { $p.Kill($true) } catch {}
+      $row = [ordered]@{ id=$t.id; state='failed'; tier=$tier; note="timed out after $TaskTimeoutMin min (attempt $attempt)"; minutes=[math]::Round(((Get-Date) - $stamp).TotalMinutes, 1) }
+      Write-Host "::endgroup::"
+      if ($attempt -eq 1) { $priorNote = $row.note; continue } else { break }
     }
-  } else {
-    $tail = ($stdout.Trim() + (Get-Content $errFile -Raw -Encoding UTF8)).Trim()
-    if ($tail.Length -gt 400) { $tail = $tail.Substring($tail.Length - 400) }
-    $results += [ordered]@{ id=$t.id; state='failed'; tier=$tier; note="no parseable result. tail: $tail"; minutes=$mins }
+
+    $stdout = (Get-Content $outFile -Raw -Encoding UTF8) ?? ''
+    Write-Host $stdout
+    Write-Host "::endgroup::"
+
+    # Take the LAST JSON object carrying a "done" key. Everything else is prose around it.
+    $parsed = $null
+    foreach ($m in [regex]::Matches($stdout, '\{[^{}]*"done"[\s\S]*?\}')) {
+      try { $o = $m.Value | ConvertFrom-Json; if ($null -ne $o.done) { $parsed = $o } } catch {}
+    }
+
+    $mins = [math]::Round(((Get-Date) - $stamp).TotalMinutes, 1)
+    if ($parsed) {
+      $row = [ordered]@{
+        id=$t.id; state=($(if ($parsed.done) {'done'} else {'failed'})); tier=$tier
+        note=$parsed.resultLine; minutes=$mins
+      }
+    } else {
+      $tail = ($stdout.Trim() + (Get-Content $errFile -Raw -Encoding UTF8)).Trim()
+      if ($tail.Length -gt 400) { $tail = $tail.Substring($tail.Length - 400) }
+      $row = [ordered]@{ id=$t.id; state='failed'; tier=$tier; note="no parseable result. tail: $tail"; minutes=$mins }
+    }
+
+    if ($row.state -eq 'done' -or $attempt -eq 2) { break }
+    $priorNote = $row.note
   }
+
+  $results += $row
 }
 
 $done  = @($results | Where-Object { $_.state -eq 'done' }).Count
