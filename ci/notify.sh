@@ -25,10 +25,17 @@ esac
 
 # --data-binary @file, never -d "$string": a body with a newline or a quote in it silently
 # truncates otherwise, and a truncated BLOCKED message is a missing resume step.
+#
+# EXTRA_ACTIONS (optional): one more "view, Label, url" action, joined onto the same header
+# with ';' per ntfy's own syntax. Still exactly one Actions header, still only 4 types above -
+# this rides on the existing button row, it does not add a new notification.
+ACTIONS="view, Open run, ${RUN_URL:-https://github.com}"
+[ -n "${EXTRA_ACTIONS:-}" ] && ACTIONS="${ACTIONS}; ${EXTRA_ACTIONS}"
+
 curl -sS --fail-with-body \
   -H "Title: ${TITLE}" \
   -H "Priority: ${PRIO}" \
   -H "Tags: ${TAGS}" \
-  -H "Actions: view, Open run, ${RUN_URL:-https://github.com}" \
+  -H "Actions: ${ACTIONS}" \
   --data-binary "@${BODY}" \
   "https://ntfy.sh/${TOPIC}" > /dev/null

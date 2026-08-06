@@ -109,9 +109,14 @@ jobs:
           DEEPSEEK_API_KEY:   ${{ secrets.DEEPSEEK_API_KEY }}
         run: pwsh ci/run-spec.ps1 -Parsed parsed.json -WorkDir "$PWD/work" -Out "result-${{ matrix.version }}.json"
 
-      # A branch + PR, never a push to main. "90% completion is good" only works if a partial
-      # result is reviewable instead of already merged.
-      - name: Open PR with the work
+      # A branch + PR, never a push straight to main - keeps a diff to look at if something's
+      # off. But nobody was reviewing it: omen-3.4's PRs (#4/#5/#6 on tradingbot) sat open up
+      # to a day, so main never reflected "done" - every later push re-selected omen-3.4 as
+      # pending and re-ran it from scratch, twice, on real API spend. 2026-08-06: merge
+      # immediately when the run had zero failed tasks - nothing left to review. A
+      # partial/blocked run still opens a PR and stays open; that case already pages
+      # "blocked" and genuinely needs him to look.
+      - name: Open PR with the work, merge if the run is clean
         env:
           GH_TOKEN: ${{ secrets.LOOP_GH_TOKEN }}
         run: |
@@ -123,8 +128,14 @@ jobs:
           git add -A
           git commit -m "loop: ${{ matrix.version }}"
           git push -u origin HEAD
-          gh pr create --fill --title "loop: ${{ matrix.version }}" \
-            --body "Automated run. See ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          PR_URL=$(gh pr create --fill --title "loop: ${{ matrix.version }}" \
+            --body "Automated run. See ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+          FAILED=$(jq '[.tasks[] | select(.state != "done" and .state != "skipped")] | length' "../result-${{ matrix.version }}.json")
+          if [ "$FAILED" = "0" ]; then
+            gh pr merge "$PR_URL" --squash --delete-branch
+          fi
+          jq --arg u "$PR_URL" '.resultUrl = $u' "../result-${{ matrix.version }}.json" > /tmp/r.json
+          mv /tmp/r.json "../result-${{ matrix.version }}.json"
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -187,7 +198,11 @@ jobs:
           git checkout -b "doc/${{ github.run_id }}"
           git add -A && git commit -m "loop: refresh project docs"
           git push -u origin HEAD
-          gh pr create --fill --title "loop: refresh project docs"
+          # Markdown-only, no review value in staying open - and a stuck-open doc PR is the
+          # exact bug that made the vault look stale in the first place. Merge on write.
+          DOC_PR=$(gh pr create --fill --title "loop: refresh project docs")
+          gh pr merge "$DOC_PR" --squash --delete-branch
+          echo "DOC_PR_URL=$DOC_PR" >> "$GITHUB_ENV"
 
       # The readable summary lives on the run page, rendered. ntfy carries a link and a count,
       # never the report itself - dumping the rollup into a push notification is what made the
@@ -252,5 +267,12 @@ jobs:
           @("$totDone of $totAll tasks done across $($all.Count) spec(s).", "",
             $highlights, "",
             "Full per-task table (target, model, every state): $env:RUN_URL") | Set-Content body.txt
+
+          # A second button on the notification, not more text in it - Austin 2026-08-06:
+          # findings only living in long .md files nobody opens is as bad as no findings.
+          # The vault doc (if refreshed) is the readable one; otherwise the first spec's
+          # merged/opened PR. ntfy Actions joins with ';', so this rides alongside "Open run".
+          $resultUrl = if ($env:DOC_PR_URL) { $env:DOC_PR_URL } else { ($all | Where-Object { $_.resultUrl } | Select-Object -First 1).resultUrl }
+          if ($resultUrl) { $env:EXTRA_ACTIONS = "view, Results, $resultUrl" }
           bash ci/notify.sh done "Loop done - $totDone/$totAll" body.txt
 
