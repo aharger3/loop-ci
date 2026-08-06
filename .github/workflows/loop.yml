@@ -177,6 +177,9 @@ jobs:
           ANTHROPIC_DEFAULT_OPUS_MODEL:   z-ai/glm-5.2
           ANTHROPIC_DEFAULT_SONNET_MODEL: z-ai/glm-5.2
           ANTHROPIC_DEFAULT_HAIKU_MODEL:  z-ai/glm-5.2
+          # Same StreamLake pin as the glm tier in ci/run-spec.ps1 - see the comment there
+          # for why this is an env var and not a flag. Keep the two in sync.
+          CLAUDE_CODE_EXTRA_BODY: '{"provider":{"order":["streamlake","baidu","novita"],"allow_fallbacks":false}}'
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1'
           GH_TOKEN: ${{ secrets.LOOP_GH_TOKEN }}
         run: |

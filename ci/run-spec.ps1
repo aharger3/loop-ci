@@ -67,10 +67,29 @@ $TIERS = @{
   # https://openrouter.ai/api - note NO /v1, Claude Code appends /v1/messages itself. The
   # usual failure is using the OpenAI base URL .../api/v1, which 404s.
   # To flip back to Z.ai once the credit is gone: swap base + secret on this one block.
+  # extraBody pins which UPSTREAM serves glm-5.2. Unpinned, OpenRouter's weighted routing
+  # picks for you and lands on whatever is healthy - measured 2026-08-06, a plain request
+  # was served by CoreWeave at $0.76/M in, $2.42/M out, while StreamLake sells the same
+  # model at $0.56/$1.76 and the mid tier (Z.AI first-party, Fireworks, Together) is
+  # $1.40/$4.40. Same test call: StreamLake $0.0000314 vs CoreWeave $0.0000725, 57% off.
+  #
+  # It reaches OpenRouter via CLAUDE_CODE_EXTRA_BODY, a Claude Code env var whose JSON is
+  # spread into the request body - the CLI has no --provider flag, and OpenRouter's
+  # Anthropic-compatible endpoint honours a top-level `provider` field exactly like its
+  # OpenAI one. Verified end-to-end 2026-08-06: a bogus provider slug 404s through the CLI
+  # while `streamlake` returns, which is only possible if the body field is transmitted.
+  # (The earlier "the Anthropic skin ignores provider" finding was measured through
+  # OmniRoute, which strips the field on its own /v1/messages route. Two hops, wrong one
+  # blamed.) NOTE: model-slug suffixes do NOT pin a provider - `:streamlake/fp8` is
+  # silently ignored and `:floor`/`:nitro` are sort orders. Don't chase them.
+  #
+  # order+allow_fallbacks:false = these three, cheapest first, and nothing else. A bare
+  # `only:["streamlake"]` would turn a StreamLake outage into a hard 404 mid-run.
   glm = @{
     model  = 'z-ai/glm-5.2'
     secret = 'OPENROUTER_API_KEY'
     base   = 'https://openrouter.ai/api'
+    extraBody = '{"provider":{"order":["streamlake","baidu","novita"],"allow_fallbacks":false}}'
     resume = 'OpenRouter credit is out. Either top it up, or flip the glm tier in ci/run-spec.ps1 back to base=https://api.z.ai/api/anthropic secret=ZAI_API_KEY model=glm-5.2 (that key is already set) after attaching a GLM Coding Plan at z.ai -> Billing.'
   }
   # DISABLED 2026-08-02 (Austin: burned paid DeepSeek). Tier() no longer returns 'deepseek',
@@ -154,6 +173,12 @@ foreach ($t in $ordered) {
   $env:ANTHROPIC_BASE_URL  = $null
   if ($cfg.base) { $env:ANTHROPIC_BASE_URL = $cfg.base; $env:ANTHROPIC_AUTH_TOKEN = $key }
   else           { $env:ANTHROPIC_API_KEY = $key }
+
+  # Cleared for every tier, then set only where the tier defines it: api.anthropic.com has
+  # no `provider` field, so leaking OpenRouter's routing block onto an opus row would send
+  # a body the vendor never asked for.
+  $env:CLAUDE_CODE_EXTRA_BODY = $null
+  if ($cfg.extraBody) { $env:CLAUDE_CODE_EXTRA_BODY = $cfg.extraBody }
 
   # --model pins the MAIN turn only. Claude Code's background calls (summarisation, title,
   # subagents) send claude-* ids, and a third-party Anthropic endpoint resolves those to
