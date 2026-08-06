@@ -13,11 +13,16 @@ on:
         description: 'Single spec filename to run (blank = every specs/*.md with status: ready)'
         required: false
 
-# Replaces loop\.run.lock. Two overlapping runs used to clobber one tmp\spec-parsed.json and
-# the only symptom was a RUN line with no EXIT (2026-07-29 00:49).
-concurrency:
-  group: loop
-  cancel-in-progress: false
+# NO workflow-level concurrency group. It used to be `group: loop`, which serialised every run
+# in the repo - push a second spec while the first was going and it sat queued. That group was
+# inherited from loop\.run.lock, which existed because two Windows runs shared one
+# tmp\spec-parsed.json (2026-07-29 00:49: a RUN line with no EXIT). On Actions every run gets
+# its own runner and its own workspace, so there is nothing to clobber and nothing to lock.
+# Austin 2026-08-06: "I want to start pushing multiple runs at the same time."
+#
+# The real collision is narrower and is handled per-spec on the `run` job below: the SAME spec
+# running twice at once would double-execute its rows and race the same loop/<version> branch.
+# Two DIFFERENT specs share nothing.
 
 jobs:
   plan:
@@ -85,6 +90,12 @@ jobs:
       fail-fast: false            # one spec dying must never take the others with it
       max-parallel: 20
       matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    # Per-SPEC, not per-repo: omen-3.6 and paze-1.0 run side by side, but pushing omen-3.6
+    # twice queues the second behind the first instead of double-running its rows and racing
+    # the same loop/omen-3.6-* branch. This is the only lock the CI rig needs.
+    concurrency:
+      group: loop-${{ matrix.version }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
@@ -97,6 +108,20 @@ jobs:
 
       - run: npm i -g @anthropic-ai/claude-code
 
+      # The runner shipped the Claude CLI and nothing else, so any row whose done-when is
+      # "python X.py exits 0" failed on a missing import rather than on its own logic. tradingbot
+      # needs only `requests` + `websocket-client` on the backtest path (no numpy, no pandas -
+      # checked 2026-08-06), so this is seconds, not a build. Non-fatal by design: a target repo
+      # with no requirements.txt, or a dep that will not install, must not stop the LLM rows.
+      - name: Install the target repo's Python deps
+        continue-on-error: true
+        run: |
+          if [ -f work/requirements.txt ]; then
+            python3 -m pip install --quiet -r work/requirements.txt
+          else
+            echo "no requirements.txt in target repo, skipping"
+          fi
+
       - shell: pwsh
         run: pwsh ci/parse-spec.ps1 -Spec "specs/${{ matrix.spec }}" -Out parsed.json
 
@@ -107,6 +132,10 @@ jobs:
           ZAI_API_KEY:        ${{ secrets.ZAI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           DEEPSEEK_API_KEY:   ${{ secrets.DEEPSEEK_API_KEY }}
+          # Not a model key - a data key. tradingbot's polygon_feed.fetch_day() needs it to
+          # backfill 1-min bars that data_archive/ does not already carry, and a spec row that
+          # silently skips uncovered days quietly shrinks every n downstream.
+          POLYGON_API_KEY:    ${{ secrets.POLYGON_API_KEY }}
         run: pwsh ci/run-spec.ps1 -Parsed parsed.json -WorkDir "$PWD/work" -Out "result-${{ matrix.version }}.json"
 
       # A branch + PR, never a push straight to main - keeps a diff to look at if something's
