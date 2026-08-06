@@ -1,4 +1,4 @@
-﻿name: The Loop
+name: The Loop
 
 # Trigger = pushing a spec. That is the whole dispatcher.
 # No cron: Austin disabled every scheduled loop run on 2026-07-30 and asked more than once
@@ -38,6 +38,17 @@ jobs:
           $specs = if ($only) { @(Get-Item "specs/$only") } else { Get-ChildItem specs -Filter *.md }
           $rows = @()
           foreach ($s in $specs) {
+            # A voided spec (status: anything but ready/running) must never take the rest of
+            # the push down with it - Austin 2026-08-05: one VOID spec sitting in specs/
+            # crashed the plan job for every future push until this was caught. Skip it here,
+            # same as the "nothing pending" case below, before parse-spec.ps1 ever sees it -
+            # its own hard Fail() stays in place as the safety net for a spec matrixed in
+            # directly (single-spec workflow_dispatch, or the run job's own re-parse).
+            $statusLine = [regex]::Match((Get-Content $s.FullName -Raw), '(?m)^status:\s*(.+?)\s*$')
+            $st = if ($statusLine.Success) { $statusLine.Groups[1].Value } else { '' }
+            if ($st -and $st -notin @('ready', 'running')) {
+              Write-Host "$($s.Name): status is '$st', not ready - skipping"; continue
+            }
             $json = "parsed-$($s.BaseName).json"
             pwsh ci/parse-spec.ps1 -Spec $s.FullName -Out $json
             if ($LASTEXITCODE -ne 0) { throw "spec $($s.Name) failed to parse - nothing ran" }
@@ -242,3 +253,4 @@ jobs:
             $highlights, "",
             "Full per-task table (target, model, every state): $env:RUN_URL") | Set-Content body.txt
           bash ci/notify.sh done "Loop done - $totDone/$totAll" body.txt
+
