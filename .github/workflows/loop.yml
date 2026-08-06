@@ -163,7 +163,14 @@ jobs:
       # visible flag said flash. Austin: DeepSeek Pro is never called again without him, and
       # a fallback must be something else. So this runs on the same glm tier as everything
       # else, and the three DEFAULT pins below leave nothing for a vendor to resolve.
+      #
+      # continue-on-error 2026-08-06: this step is a nice-to-have that sits IN FRONT of the
+      # notifications. On omen-3.5 its `gh pr create` failed, `set -e` killed the step, and the
+      # "Summary + final notification" step below never ran - so a 0/3 run and a blocked row
+      # reached Austin as silence. He had asked repeatedly why ntfy stopped working; this was
+      # why. A markdown refresh must never be able to swallow the result of the run.
       - name: Refresh the vault project doc
+        continue-on-error: true
         env:
           ANTHROPIC_BASE_URL:  https://openrouter.ai/api
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.OPENROUTER_API_KEY }}
@@ -195,19 +202,20 @@ jobs:
           done
           if [ -z "$(git status --porcelain)" ]; then echo "doc already current"; exit 0; fi
           git config user.name the-loop && git config user.email loop@austinharger.com
-          git checkout -b "doc/${{ github.run_id }}"
           git add -A && git commit -m "loop: refresh project docs"
-          git push -u origin HEAD
-          # Markdown-only, no review value in staying open - and a stuck-open doc PR is the
-          # exact bug that made the vault look stale in the first place. Merge on write.
-          DOC_PR=$(gh pr create --fill --title "loop: refresh project docs")
-          gh pr merge "$DOC_PR" --squash --delete-branch
-          echo "DOC_PR_URL=$DOC_PR" >> "$GITHUB_ENV"
+          # Straight to main. This is markdown that was squash-merged on sight anyway, so the
+          # PR round-trip bought nothing and cost everything: on omen-3.5 `gh pr create --fill`
+          # aborted with "you must first push the current branch to a remote, or use --head",
+          # which failed the step and silenced the run's notifications.
+          git push origin HEAD:main \
+            || { git pull --rebase --autostash origin main && git push origin HEAD:main; }
+          echo "DOC_URL=https://github.com/aharger3/obsidian-vault/commit/$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       # The readable summary lives on the run page, rendered. ntfy carries a link and a count,
       # never the report itself - dumping the rollup into a push notification is what made the
       # old channel unreadable.
       - name: Summary + final notification
+        if: always()
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         shell: pwsh
@@ -272,7 +280,7 @@ jobs:
           # findings only living in long .md files nobody opens is as bad as no findings.
           # The vault doc (if refreshed) is the readable one; otherwise the first spec's
           # merged/opened PR. ntfy Actions joins with ';', so this rides alongside "Open run".
-          $resultUrl = if ($env:DOC_PR_URL) { $env:DOC_PR_URL } else { ($all | Where-Object { $_.resultUrl } | Select-Object -First 1).resultUrl }
+          $resultUrl = if ($env:DOC_URL) { $env:DOC_URL } else { ($all | Where-Object { $_.resultUrl } | Select-Object -First 1).resultUrl }
           if ($resultUrl) { $env:EXTRA_ACTIONS = "view, Results, $resultUrl" }
           bash ci/notify.sh done "Loop done - $totDone/$totAll" body.txt
 

@@ -24,6 +24,19 @@ param(
 $ErrorActionPreference = 'Stop'
 $plan = Get-Content $Parsed -Raw -Encoding UTF8 | ConvertFrom-Json
 
+# Snapshot every secret ONCE, before the task loop touches the process environment.
+#
+# 2026-08-06: the loop below clears $env:ANTHROPIC_API_KEY at the top of every task so a
+# leftover value can't authenticate the next one. It then read the tier's secret back OUT of
+# the same process environment - so the first glm row erased the key and every later opus row
+# saw nothing and reported BLOCKED "add repo secret ANTHROPIC_API_KEY". The secret was there
+# the whole time. This ate omen-3.4's T9 and omen-3.5's T5, and both runs told Austin to go
+# add a secret that was already set. Read from this table, never from $env:, after this line.
+$SECRETS = @{}
+foreach ($n in 'ANTHROPIC_API_KEY','OPENROUTER_API_KEY','ZAI_API_KEY','DEEPSEEK_API_KEY') {
+  $SECRETS[$n] = [Environment]::GetEnvironmentVariable($n)
+}
+
 # --- model tag -> tier -------------------------------------------------------------------
 # The spec's `model:` column records INTENT ("this row needs judgment"). This function is the
 # only place that decides a vendor, so the ladder moves in one edit. Austin 2026-08-02:
@@ -118,7 +131,7 @@ foreach ($t in $ordered) {
 
   $tier = Tier $t.model
   $cfg  = $TIERS[$tier]
-  $key  = [Environment]::GetEnvironmentVariable($cfg.secret)
+  $key  = $SECRETS[$cfg.secret]
 
   # A missing key is BLOCKED, never FAILED, and never silently downgraded onto a cheaper
   # model. The old rig's one unbreakable rule survives: if the named tier is unreachable,
@@ -165,6 +178,15 @@ foreach ($t in $ordered) {
       "`n`nATTEMPT $attempt of 2 - this is a bug-fix pass. Your previous attempt on this exact task reported: `"$priorNote`". The done-when check did not pass. Find and fix what's actually wrong - do not repeat the same approach that just failed.`n"
     } else { '' }
 
+    # The result is a FILE the task writes, not a line this script greps out of stdout.
+    # 2026-08-06: omen-3.5's T1 and T3 both printed {"done": true, ...} as the last line of
+    # stdout and both were recorded state=failed, note=null - two rows of real, finished work
+    # thrown away, and every downstream row skipped as "upstream not done". Scraping a model's
+    # prose for its own status was always the weak joint. A file either exists and parses or it
+    # does not, and the raw bytes get logged either way, so this can never fail invisibly again.
+    $resFile = Join-Path ([IO.Path]::GetTempPath()) "loop-$($t.id)-$attempt.json"
+    Remove-Item $resFile -ErrorAction SilentlyContinue
+
     $prompt = @"
 You are executing task $($t.id) of master spec $($plan.version), working in $WorkDir.
 
@@ -172,10 +194,17 @@ $($t.prompt)
 
 DONE-WHEN: $($t.doneWhen)
 $fixNote
-Do the work. Edit files directly. Then print, as the LAST thing in your output, one line of
-JSON and nothing after it:
-{"done": true|false, "resultLine": "one sentence on what you actually did or why not"}
-Set done=false honestly if the done-when test does not pass. A false 'done' is worse than a
+Do the work. Edit files directly.
+
+Then, as your FINAL action, write this exact file - it is the only thing this runner reads,
+and a task that does not write it is recorded as failed no matter what it printed:
+
+  $resFile
+
+containing one JSON object and nothing else:
+{"done": true, "resultLine": "one sentence on what you actually did or why not"}
+
+Set done to false honestly if the done-when test does not pass. A false 'done' is worse than a
 failure, because it checks a row off that nobody did.
 "@
 
@@ -206,17 +235,30 @@ failure, because it checks a row off that nobody did.
     Write-Host $stdout
     Write-Host "::endgroup::"
 
-    # Take the LAST JSON object carrying a "done" key. Everything else is prose around it.
-    $parsed = $null
-    foreach ($m in [regex]::Matches($stdout, '\{[^{}]*"done"[\s\S]*?\}')) {
-      try { $o = $m.Value | ConvertFrom-Json; if ($null -ne $o.done) { $parsed = $o } } catch {}
+    # The file first. Falling back to a stdout scrape keeps a task that ignored the
+    # write-a-file instruction from being thrown away - but the fallback is now the exception,
+    # and which path was taken is printed, so "why was this failed?" is answerable from the log.
+    $parsed = $null; $how = 'none'
+    if (Test-Path $resFile) {
+      $raw = (Get-Content $resFile -Raw -Encoding UTF8)
+      try { $o = $raw | ConvertFrom-Json; if ($null -ne $o.done) { $parsed = $o; $how = 'file' } }
+      catch { Write-Host "$($t.id): result file did not parse as JSON: $raw" }
     }
+    if (-not $parsed) {
+      foreach ($m in [regex]::Matches($stdout, '\{[^{}]*"done"[\s\S]*?\}')) {
+        try { $o = $m.Value | ConvertFrom-Json; if ($null -ne $o.done) { $parsed = $o; $how = 'stdout' } } catch {}
+      }
+    }
+    Write-Host "$($t.id): result via $how -> done=$(if ($parsed) { $parsed.done } else { '<no result>' })"
 
     $mins = [math]::Round(((Get-Date) - $stamp).TotalMinutes, 1)
     if ($parsed) {
       $row = [ordered]@{
         id=$t.id; state=($(if ($parsed.done) {'done'} else {'failed'})); tier=$tier
-        note=$parsed.resultLine; minutes=$mins
+        # Never null: a null note is what made omen-3.5 unreadable after the fact, and it is
+        # also what the retry pass hands the next attempt as "your last attempt reported ___".
+        note=($(if ($parsed.resultLine) { $parsed.resultLine } else { "(no resultLine; result via $how)" }))
+        minutes=$mins
       }
     } else {
       $tail = ($stdout.Trim() + (Get-Content $errFile -Raw -Encoding UTF8)).Trim()
