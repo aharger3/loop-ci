@@ -172,6 +172,38 @@ jobs:
           name: result-${{ matrix.version }}
           path: result-*.json
 
+  # The loop dying before it starts must not be silent. 2026-08-06 run 31118549809: GitHub
+  # could not allocate a hosted runner ("The job was not acquired by Runner of type hosted even
+  # after multiple attempts"), `plan` was cancelled at 15 minutes with zero steps run, and
+  # `run` + `report` were both SKIPPED - so the whole push produced no notification at all.
+  # `report` cannot cover this: it needs plan's outputs, and a skipped job has none.
+  #
+  # This job needs nothing and always runs. It fires exactly one blocked ntfy, and only when a
+  # job did not reach a normal conclusion - so a healthy run stays as quiet as it is today.
+  alarm:
+    needs: [plan, run, report]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Page if the run never really happened
+        if: needs.plan.result == 'cancelled' || needs.plan.result == 'failure' || needs.run.result == 'cancelled' || needs.report.result == 'cancelled'
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          printf '%s\n' \
+            "The loop did not run. This is infrastructure, not a spec." \
+            "" \
+            "  plan:   ${{ needs.plan.result }}" \
+            "  run:    ${{ needs.run.result }}" \
+            "  report: ${{ needs.report.result }}" \
+            "" \
+            "A cancelled plan job with no steps means GitHub could not allocate a hosted" \
+            "runner. Nothing was spent and no spec row ran. To retry: re-run the failed jobs" \
+            "on the run page, or trigger The Loop manually from the Actions tab." > body.txt
+          bash ci/notify.sh blocked "Loop never started" body.txt
+
   report:
     needs: [plan, run]
     if: always() && needs.plan.outputs.count != '0'
