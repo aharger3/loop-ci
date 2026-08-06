@@ -76,7 +76,6 @@ updated) tier from T1.
 ### T3 -- Fix the HOD/LOD off-by-one in levels.py
 
 - model: glm
-- depends-on: none
 
 `research/levels.py`, `hod_lod_nodes()`, line 137: change `seg = bars[: entry_i + 1]` to
 `seg = bars[: entry_i]`. The session high/low must be computed from bars *before* the entry bar,
