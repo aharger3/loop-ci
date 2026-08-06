@@ -1,7 +1,12 @@
 # OMEN 3.5 - re-grade the marks, fix the veto, re-run
 
-status: ready
+status: void
 version: omen-3.5
+
+VOID 2026-08-06. T1's whole premise was wrong: the 162 verdicts share ZERO (symbol, day) pairs
+with `research/blind_marks_all.jsonl`, so there was nothing to re-grade - they are a separate
+marking session. T3's HOD/LOD fix is done and merged to tradingbot main (PR #7). T2, T4 and T5
+are carried forward as omen-3.6's T3, T6 and T8. Do not re-run this spec.
 repo: aharger3/tradingbot
 doc: Projects/omen-trading.md
 
