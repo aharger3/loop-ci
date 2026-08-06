@@ -25,7 +25,7 @@ detecting d = 0.20 needs roughly 786 trades where a 5-point win-rate difference 
 
 ## Tasks
 
-### T1 -- Inventory and freeze the population
+### [x] T1 -- Inventory and freeze the population
 
 - model: deepseek
 
@@ -48,7 +48,7 @@ those numbers by argument. Count the file and report what it says.
 
 - **done-when:** `research/omen34_inputs.md` exists, contains a line matching `^POPULATION_N: [0-9]+$`, and every path it lists outside its `MISSING` section resolves to a file that exists.
 
-### T2 -- Level engine
+### [x] T2 -- Level engine
 
 - model: glm
 - depends-on: T1
@@ -88,7 +88,7 @@ into one node whose weight is the sum.
 
 - **done-when:** `python research/test_levels.py` exits 0, and `python research/levels.py --selftest` prints a level set for one symbol-day with every entry carrying an `available_from` field.
 
-### T3 -- Ingest the marks and audit their coherence
+### [x] T3 -- Ingest the marks and audit their coherence
 
 - model: deepseek
 - depends-on: T1
@@ -115,7 +115,7 @@ Emit `research/marks_clean.jsonl` with every mark carrying three added booleans:
 
 - **done-when:** `research/marks_clean.jsonl` has exactly one line per input mark, every line carries the three boolean fields, and `research/marks_audit.md` states a count for each of the three defects.
 
-### T4 -- Target autopsy: what rule is he actually using
+### [x] T4 -- Target autopsy: what rule is he actually using
 
 - model: deepseek
 - depends-on: T2, T3
@@ -145,7 +145,7 @@ Every mark must land in a bucket. A mark the code cannot classify is a bug in th
 
 - **done-when:** `research/target_autopsy.md` exists, reports a bucket count for all four buckets summing to the line count of `research/marks_clean.jsonl`, and contains a section headed `PRECEDENCE` naming which rule wins when a level and 2R disagree.
 
-### T5 -- H5: does targeting just short of a round number fill more often
+### [x] T5 -- H5: does targeting just short of a round number fill more often
 
 - model: deepseek
 - depends-on: T2
@@ -173,7 +173,7 @@ Write `research/h5_frontrun.md`.
 
 - **done-when:** `research/h5_frontrun.md` exists and states `n_discordant`, a McNemar result for fill rate, a Wilcoxon result for realized R, and an explicit sentence on whether the two endpoints agree.
 
-### T6 -- H3: does a veto in front of a wall pay for itself
+### [x] T6 -- H3: does a veto in front of a wall pay for itself
 
 - model: glm
 - depends-on: T2
@@ -202,7 +202,7 @@ Write `research/h3_veto.md`.
 
 - **done-when:** `research/h3_veto.md` exists, contains the four-threshold sweep table, states the veto rate at each threshold, and reports a bootstrap CI on the difference in mean realized R.
 
-### T7 -- H9: does confluence weight track outcome at all
+### [x] T7 -- H9: does confluence weight track outcome at all
 
 - model: deepseek
 - depends-on: T2
@@ -225,7 +225,7 @@ Write `research/h9_confluence.md`.
 
 - **done-when:** `research/h9_confluence.md` exists, reports a Spearman rho with a day-block bootstrap CI, and contains a binned table of mean realized R by weight bucket with an n for every bucket.
 
-### T8 -- Instrument check: how often can 1-minute bars not tell us what happened
+### [x] T8 -- Instrument check: how often can 1-minute bars not tell us what happened
 
 - model: deepseek
 - depends-on: T2
