@@ -1,9 +1,18 @@
 # OMEN 3.6 - turn the 78 S trades into a gate the engine actually runs
 
-status: ready
+status: done
 version: omen-3.6
 repo: aharger3/tradingbot
 doc: Projects/omen-trading.md
+
+**CLOSED 2026-08-07.** Run `31122686346` was cancelled by GitHub Actions at 1h28m partway
+through T7. T1-T6 completed and landed via PR #9, merged to `main` 2026-08-07; every artifact
+their done-when names was independently verified present on `main` before this file was marked
+done. **T7 is VOID** — a ~90-minute 12-month A/B of a gate whose own pre-registered keep-rate gap
+is +12.5pp with a 95% CI of [-20.7, +45.5], run against an engine that fires on 4 of 77 of
+Austin's S marks. It buys no decidable number. **T8's question is answered** in
+`research/v36_verdict.md`, written from the six completed artifacts with nothing recomputed.
+Successor: `specs/omen-3.7.md` — detection, not filtering.
 
 target: fit a signal gate from Austin's own S/A/X verdicts, ship it into signal_runner.py as a
 real flag, and A/B it on the 12-month backtest - so the answer is a new backtest number, not
@@ -43,7 +52,7 @@ the minimum detectable effect it actually had, rather than "no effect".
 
 ## Tasks
 
-### T1 -- Normalize the 162 verdicts into a labels file
+### [x] T1 -- Normalize the 162 verdicts into a labels file
 
 - model: glm
 
@@ -68,7 +77,7 @@ duplicates you collapsed, and the entry_i min/max.
 
 - **done-when:** `research/austin_verdicts.json` holds 162 objects, `research/austin_marks_v2.jsonl` has exactly 159 lines each with symbol/day/entry_i/tier and tier in S/A/X, and `research/austin_marks_v2.md` states the three tier counts summing to 159.
 
-### T2 -- Close the 1-minute bar gap for the marked days
+### [x] T2 -- Close the 1-minute bar gap for the marked days
 
 - model: glm
 - depends-on: T1
@@ -92,7 +101,7 @@ shrinks every later n.
 
 - **done-when:** `research/bar_coverage.md` exists, states a covered count out of 151 within its first 10 lines, and explicitly lists every still-missing pair with a reason.
 
-### T3 -- Feature vector at every marked bar
+### [x] T3 -- Feature vector at every marked bar
 
 - model: glm
 - depends-on: T2
@@ -123,7 +132,7 @@ feature) and `research/mark_features.md` (usable count, dropped count, per-featu
 
 - **done-when:** `research/mark_features.jsonl` has one line per usable mark, each carrying symbol/day/entry_i/tier plus at least 8 named feature keys, and `research/mark_features.md` states the usable count, the dropped count, and how the no-future-bars rule was enforced.
 
-### T4 -- Does the engine fire where Austin says S?
+### [x] T4 -- Does the engine fire where Austin says S?
 
 - model: glm
 - depends-on: T2
@@ -148,7 +157,7 @@ detection problem, not a filter problem - and the verdict has to say so.
 
 - **done-when:** `research/engine_recall.md` exists, states S/A/X recall counts and the precision fraction within its first 15 lines, and names the detection module and function it ran.
 
-### T5 -- Fit the gate, and pre-register it before any backtest
+### [x] T5 -- Fit the gate, and pre-register it before any backtest
 
 - model: glm
 - depends-on: T3
@@ -181,7 +190,7 @@ re-tuned after seeing the backtest.
 
 - **done-when:** `research/s_gate_spec.md` exists, contains a ranked table for S-vs-X and one for S-vs-A each with effect/CI/FDR-p per feature, and contains a `PRE-REGISTERED GATE` section naming at most two features with literal numeric thresholds and a stated prediction.
 
-### T6 -- Ship the gate into the engine
+### [x] T6 -- Ship the gate into the engine
 
 - model: glm
 - depends-on: T5
