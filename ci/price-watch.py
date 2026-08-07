@@ -13,7 +13,7 @@ Fires only when:
 
 ponytail: stdlib only, and the snapshot is a committed JSON file rather than a database.
 """
-import json, os, subprocess, sys, urllib.request
+import json, os, sys, urllib.request
 
 THRESHOLD = 0.25                      # 25% move is worth a push notification; 5% is noise
 SNAP = os.path.join(os.path.dirname(__file__), "price-snapshot.json")
@@ -96,11 +96,14 @@ def main():
 
     body = "\n".join(f"- {l}" for l in lines)
     print(body)
-    with open("pw-body.txt", "w") as f:
-        f.write(body + "\n")
-    subprocess.run(["bash", os.path.join(os.path.dirname(__file__), "notify.sh"),
-                    "recommend", "Model stack: something worth changing", "pw-body.txt"],
-                   check=False)
+    # NOT a notification. Austin 2026-08-07: the only pushes he expects are the loop's own
+    # four (start/blocked/recommend/done) from a run he triggered. A monthly cron posting
+    # `recommend` to the same topic is the fifth sender, and an unattributed "recommendation"
+    # with no run behind it is exactly the noise that killed the old channel. It lands on the
+    # workflow run summary instead, where it is read when he looks, not when it fires.
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+            f.write("## Model stack: something worth changing\n\n" + body + "\n")
     return 0
 
 if __name__ == "__main__":

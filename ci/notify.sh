@@ -32,7 +32,9 @@ esac
 ACTIONS="view, Open run, ${RUN_URL:-https://github.com}"
 [ -n "${EXTRA_ACTIONS:-}" ] && ACTIONS="${ACTIONS}; ${EXTRA_ACTIONS}"
 
-curl -sS --fail-with-body \
+# --retry: ntfy.sh is a free public service and a single 5xx or dropped connection would
+# otherwise lose the ONLY signal a run emits. Four types a run, so retrying is free.
+curl -sS --fail-with-body --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
   -H "Title: ${TITLE}" \
   -H "Priority: ${PRIO}" \
   -H "Tags: ${TAGS}" \

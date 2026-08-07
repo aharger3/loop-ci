@@ -180,6 +180,13 @@ jobs:
   #
   # This job needs nothing and always runs. It fires exactly one blocked ntfy, and only when a
   # job did not reach a normal conclusion - so a healthy run stays as quiet as it is today.
+  #
+  # `report` is deliberately NOT in the condition (only in `needs`, for ordering). 2026-08-07
+  # run 31122686346: 16 rows landed, `done` was sent, and then this job paged "Loop never
+  # started" - because report's JOB conclusion was `cancelled` (its doc-refresh step hit the
+  # 5-minute job timeout) even though its final notification step had already run and
+  # succeeded. report's own summary step is `if: always()`, so report owns reporting itself;
+  # this job only covers the case where no spec row ever ran.
   alarm:
     needs: [plan, run, report]
     if: always()
@@ -188,30 +195,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Page if the run never really happened
-        if: needs.plan.result == 'cancelled' || needs.plan.result == 'failure' || needs.run.result == 'cancelled' || needs.report.result == 'cancelled'
+        if: needs.plan.result == 'cancelled' || needs.plan.result == 'failure' || needs.run.result == 'cancelled'
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           printf '%s\n' \
-            "The loop did not run. This is infrastructure, not a spec." \
+            "No spec row ran. Nothing was spent." \
             "" \
             "  plan:   ${{ needs.plan.result }}" \
             "  run:    ${{ needs.run.result }}" \
-            "  report: ${{ needs.report.result }}" \
             "" \
-            "A cancelled plan job with no steps means GitHub could not allocate a hosted" \
-            "runner. Nothing was spent and no spec row ran. To retry: re-run the failed jobs" \
-            "on the run page, or trigger The Loop manually from the Actions tab." > body.txt
+            "plan FAILURE = a spec in specs/ did not parse; the plan job log names the file" \
+            "and the line. Fix the spec and push again." \
+            "" \
+            "plan CANCELLED with no steps = GitHub could not allocate a hosted runner. Not" \
+            "your fault, nothing to fix: re-run the failed jobs on the run page, or trigger" \
+            "The Loop manually from the Actions tab." > body.txt
           bash ci/notify.sh blocked "Loop never started" body.txt
 
   report:
     needs: [plan, run]
     if: always() && needs.plan.outputs.count != '0'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # 25, not 5. The doc-refresh step below runs a full Claude Code turn over a vault clone,
+    # which does not fit in 5 minutes - on 2026-08-06 (run 31122686346) it was still going at
+    # 5:21, the JOB timed out, and a 16-row successful run got a "Loop never started" page.
+    # A job timeout is not survivable by continue-on-error, so the step carries its own
+    # timeout too: the markdown refresh gets 10 minutes and then gives up, leaving the rest of
+    # this job (the notifications) the headroom it needs.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      # continue-on-error: a run that died before writing any result JSON has no artifact at
+      # all, and v4 hard-errors on "no artifacts found". That must not kill the job that is
+      # supposed to say so - the zero-results case is handled in the notification step below.
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with: { path: results, merge-multiple: true }
 
       # Austin 2026-08-02: "My obsidian projects are always outdated." They were outdated
@@ -232,6 +251,7 @@ jobs:
       # why. A markdown refresh must never be able to swallow the result of the run.
       - name: Refresh the vault project doc
         continue-on-error: true
+        timeout-minutes: 10
         env:
           ANTHROPIC_BASE_URL:  https://openrouter.ai/api
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.OPENROUTER_API_KEY }}
@@ -284,7 +304,23 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         shell: pwsh
         run: |
-          $all = Get-ChildItem results -Filter *.json -Recurse | ForEach-Object { Get-Content $_ -Raw | ConvertFrom-Json }
+          $all = @(Get-ChildItem results -Filter *.json -Recurse -ErrorAction SilentlyContinue |
+                   ForEach-Object { Get-Content $_ -Raw | ConvertFrom-Json })
+
+          # No result file at all = the run job died before run-spec.ps1 wrote one (bad
+          # checkout, npm install, spec re-parse). Without this the counts below are both
+          # $null and the run reports itself as "Loop done - /" - a green notification for a
+          # run that did nothing. That is worse than silence, so it pages BLOCKED instead.
+          if (-not $all.Count) {
+            @("The run job produced no result file, so NO spec row can be confirmed as done.",
+              "", "  run job: ${{ needs.run.result }}", "",
+              "This is a crash before the task loop, not a failed task. Open the run page,",
+              "read the first red step in the 'run' job, fix that, and push again.") |
+              Set-Content body.txt
+            bash ci/notify.sh blocked "Loop produced no result" body.txt
+            exit 0
+          }
+
           $md = @("# Loop run", "")
           $blocked = @(); $recommend = @()
           foreach ($r in $all) {
