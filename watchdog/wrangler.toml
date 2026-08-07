@@ -1,0 +1,8 @@
+name = "loop-watchdog"
+main = "worker.js"
+compatibility_date = "2026-08-07"
+
+# 20 min tick against worker.js's 25 min window - the overlap is what makes a dropped tick
+# survivable. Change one and change the other. 72 invocations a day, free plan is 100k.
+[triggers]
+crons = ["*/20 * * * *"]
