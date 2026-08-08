@@ -313,7 +313,10 @@ failure, because it checks a row off that nobody did.
     # happens again this line proves which half is lying: the raw bytes the file actually held,
     # and .done's real CLR type, not just its truthiness.
     if ($parsed) {
-      Write-Host "$($t.id): result via $how -> done=$($parsed.done) (type=$($parsed.done.GetType().Name)) resultLine=$($parsed.resultLine)"
+      # .GetType() on a $null .done crashed the whole process here on 2026-08-08 (T3 attempt 2
+      # finished real work, then this line killed the run before T6/T8 ran) - null-guard it.
+      $doneType = if ($null -eq $parsed.done) { '<null>' } else { $parsed.done.GetType().Name }
+      Write-Host "$($t.id): result via $how -> done=$($parsed.done) (type=$doneType) resultLine=$($parsed.resultLine)"
     } else {
       Write-Host "$($t.id): result via $how -> done=<no result>"
     }
