@@ -54,7 +54,7 @@ extracted frames before the task ends. Only JSONL and markdown belong in the com
 
 ## Tasks
 
-### T1 -- The recall number corpus 1.0 never produced
+### [x] T1 -- The recall number corpus 1.0 never produced
 
 - model: glm
 
@@ -84,7 +84,7 @@ Lead the file with the single overall recall figure and its interval.
 
 - **done-when:** `research/corpus_recall.md` exists, its first 10 lines state overall recall with a confidence interval, it contains the four-window sensitivity table, and `research/corpus_misses.jsonl` exists with at least 100 lines.
 
-### T2 -- Enumerate both channels, and find out what this runner can actually fetch
+### [x] T2 -- Enumerate both channels, and find out what this runner can actually fetch
 
 - model: glm
 

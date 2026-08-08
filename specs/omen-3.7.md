@@ -79,7 +79,7 @@ still measures how much damage it does; T5 does not need to relitigate whether i
 
 ## Tasks
 
-### T1 -- Backfill the 49 missing symbol-days
+### [x] T1 -- Backfill the 49 missing symbol-days
 
 - model: glm
 
@@ -109,7 +109,7 @@ ended up reporting on 48 S marks while claiming 77.
 
 - **done-when:** `research/bar_coverage_v2.md` exists, states a covered-out-of-159 count within its first 10 lines, lists every still-missing pair with the reason Polygon gave, and `grep -n IWM archive_1m.py` shows IWM in the SYMBOLS list.
 
-### T2 -- Autopsy every miss: why did no signal come out?
+### [x] T2 -- Autopsy every miss: why did no signal come out?
 
 - model: glm
 - depends-on: T1
@@ -168,7 +168,7 @@ would reach. Do **not** change any code in this row.
 
 - **done-when:** `research/miss_autopsy.jsonl` has one line per mark that has bars, each carrying symbol/day/entry_i/tier/miss_reason with miss_reason drawn only from the fixed vocabulary above, and `research/miss_autopsy.md` opens with a reason-by-tier count table whose S column sums to the number of S marks with bars.
 
-### T2.1 -- Same autopsy over the 10,379-instance corpus
+### [x] T2.1 -- Same autopsy over the 10,379-instance corpus
 
 - model: glm
 - depends-on: T2
@@ -240,7 +240,7 @@ Write `research/rule7_rule10.jsonl` (identity triple, tier, both features) and
 
 - **done-when:** `research/rule7_rule10.jsonl` has one line per mark with bars carrying `bars_break_to_retest` and `left_pivot_count` keys, and `research/rule7_rule10.md` reports d, a bootstrap CI, and an MDE for each feature on both the S-vs-X and S-vs-A contrasts.
 
-### T4 -- The tradable universe, by options volume
+### [x] T4 -- The tradable universe, by options volume
 
 - model: deepseek
 
@@ -267,7 +267,7 @@ This row changes no code. `SYMBOLS` stays as it is until Austin picks from the r
 
 - **done-when:** `research/universe.md` exists, has one row per symbol in `archive_1m.py`'s SYMBOLS list with a volume figure and a source label, flags exactly 10 as the focus list, and names either the Polygon endpoint used or the exact HTTP status that forced the proxy.
 
-### T5 -- Widen detection at the top miss reason, and rename D to X
+### [x] T5 -- Widen detection at the top miss reason, and rename D to X
 
 - model: opus
 - depends-on: T2
@@ -374,7 +374,7 @@ backtest is what cancelled the 3.6 run.
 
 - **done-when:** `research/recall_ab.md` exists, its first 15 lines carry the mechanism check with raw and fired signal counts for both arms, and it states fired S recall and any-signal S recall for OFF and ON over stated denominators plus precision for both arms.
 
-### T7 -- Render the next marking batch
+### [x] T7 -- Render the next marking batch
 
 - model: deepseek
 - depends-on: T2
