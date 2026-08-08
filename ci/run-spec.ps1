@@ -33,7 +33,8 @@ $plan = Get-Content $Parsed -Raw -Encoding UTF8 | ConvertFrom-Json
 # the whole time. This ate omen-3.4's T9 and omen-3.5's T5, and both runs told Austin to go
 # add a secret that was already set. Read from this table, never from $env:, after this line.
 $SECRETS = @{}
-foreach ($n in 'ANTHROPIC_API_KEY','OPENROUTER_API_KEY','ZAI_API_KEY','DEEPSEEK_API_KEY') {
+foreach ($n in 'ANTHROPIC_API_KEY','OPENROUTER_API_KEY','ZAI_API_KEY','DEEPSEEK_API_KEY',
+               'CLAUDE_CODE_OAUTH_TOKEN') {
   $SECRETS[$n] = [Environment]::GetEnvironmentVariable($n)
 }
 
@@ -54,11 +55,25 @@ function Tier($model) {
 # Each tier is (env block, model id, which secret must exist, how to fix it if missing).
 # `resume` is the literal text of the BLOCKED notification - the exact steps, not a hint.
 $TIERS = @{
+  # 2026-08-08: opus moved off the pay-per-token console key and onto Austin's Max
+  # subscription. `claude setup-token` mints a ONE-YEAR OAuth token that Anthropic documents
+  # for exactly this ("Use this for CI pipelines and scripts where browser login isn't
+  # available"), so opus rows now cost subscription quota instead of dollars.
+  #
+  # oauth = $true because the token goes in its OWN variable, not ANTHROPIC_API_KEY. That
+  # matters more than it looks: in Claude Code's auth precedence ANTHROPIC_API_KEY (#3)
+  # OUTRANKS CLAUDE_CODE_OAUTH_TOKEN (#5), so setting both silently bills the console key
+  # and the subscription is never touched. The loop clears every credential var per task,
+  # which is what keeps that from happening here.
+  #
+  # Known limits: the token can only make model requests - no Remote Control, no claude.ai
+  # connectors - and `claude --bare` does not read it. Neither is used on this path.
   opus = @{
     model  = 'claude-opus-5'
-    secret = 'ANTHROPIC_API_KEY'
+    secret = 'CLAUDE_CODE_OAUTH_TOKEN'
+    oauth  = $true
     base   = ''                                     # native api.anthropic.com
-    resume = 'Add repo secret ANTHROPIC_API_KEY (Anthropic console key), then re-run the job.'
+    resume = 'Run `claude setup-token` on any machine (shell command, not a slash command) and set the printed value as repo secret CLAUDE_CODE_OAUTH_TOKEN, then re-run the job. Tokens last a year. To go back to pay-per-token instead, set secret=ANTHROPIC_API_KEY and drop oauth on this block.'
   }
   # GLM points at OpenRouter, not Z.ai, until Austin's $30 of OpenRouter credit is spent.
   # 2026-08-02: the Z.ai key authenticates but the account returns 429 code 1113
@@ -168,11 +183,17 @@ foreach ($t in $ordered) {
     continue
   }
 
+  # CLAUDE_CODE_OAUTH_TOKEN is cleared with the rest for the same reason they all are: a
+  # leftover credential must never authenticate the next task. It also has to be cleared
+  # BEFORE the gateway tiers run, because a stray subscription token on a glm row would be
+  # sent to OpenRouter.
   $env:ANTHROPIC_API_KEY   = $null
   $env:ANTHROPIC_AUTH_TOKEN = $null
   $env:ANTHROPIC_BASE_URL  = $null
-  if ($cfg.base) { $env:ANTHROPIC_BASE_URL = $cfg.base; $env:ANTHROPIC_AUTH_TOKEN = $key }
-  else           { $env:ANTHROPIC_API_KEY = $key }
+  $env:CLAUDE_CODE_OAUTH_TOKEN = $null
+  if     ($cfg.base)  { $env:ANTHROPIC_BASE_URL = $cfg.base; $env:ANTHROPIC_AUTH_TOKEN = $key }
+  elseif ($cfg.oauth) { $env:CLAUDE_CODE_OAUTH_TOKEN = $key }
+  else                { $env:ANTHROPIC_API_KEY = $key }
 
   # Cleared for every tier, then set only where the tier defines it: api.anthropic.com has
   # no `provider` field, so leaking OpenRouter's routing block onto an opus row would send
