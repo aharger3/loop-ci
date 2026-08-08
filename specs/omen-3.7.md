@@ -202,7 +202,15 @@ it would mean Austin's setups fail differently from the alerts, and T5 must foll
 
 - **done-when:** `research/corpus_miss_autopsy.md` exists, states the number of corpus instances classified out of the 3,595 covered symbol-days, carries a reason-count table using the same vocabulary as `research/miss_autopsy.md`, and contains a side-by-side table comparing the corpus reason distribution against the S-mark reason distribution.
 
-### T3 -- Rule 7 and rule 10 as numbers
+### [x] T3 -- Rule 7 and rule 10 as numbers
+
+<!-- 2026-08-08: marked done by hand after independently verifying the artifact, not blindly
+     unstuck. research/rule7_rule10.jsonl (159 lines, bars_break_to_retest + left_pivot_count
+     keys present) and research/rule7_rule10.md (d, 95% CI, MDE for both features on S-vs-X and
+     S-vs-A) both confirmed on main via PR #13 (merged). The runner recorded this "failed" twice
+     on a result-handshake bug (done= parsed blank despite the file existing) - the work itself
+     was correct both times. See ci/run-spec.ps1's 2026-08-08 comments for the open bug. -->
+
 
 - model: glm
 - depends-on: T1
@@ -340,7 +348,14 @@ widened path accepts and one it still rejects, plus an assertion that `DETECT_WI
 
 - **done-when:** `python test_detect_wide.py` exits 0, `grep -n "DETECT_WIDE" signal_runner.py` shows the module global defaulting to False, `research/detect_wide.md` states the targeted miss reason and a predicted recall number, `grep -n "austin_tier" signal_runner.py` finds the field, and `grep -n "FAIR_VALUE_GAP" omen_bot.py signal_runner.py` shows the new SignalType in both files.
 
-### T6 -- Re-measure recall, widening OFF vs ON
+### [x] T6 -- Re-measure recall, widening OFF vs ON
+
+<!-- 2026-08-08: same as T3 above - independently verified, not blindly unstuck.
+     research/recall_ab.md confirmed on main via PR #13 (merged): mechanism check in the first
+     15 lines (raw 738->2101, fired 116->440), fired/any-signal S recall for both arms
+     (10/77->14/77 fired; 27/77->27/77 any-signal deduped), precision for both arms
+     (38.5%->19.4%). -->
+
 
 - model: glm
 - depends-on: T5
