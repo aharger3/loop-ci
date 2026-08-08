@@ -293,12 +293,20 @@ failure, because it checks a row off that nobody did.
     # for why a non-boolean 'done' is a rejection and not a false. A file that exists but does
     # not yield one gets its raw bytes dumped: an unreadable sentinel must never again be able
     # to fail a row silently, which is what cost omen-3.6, omen-corpus-1.0 and omen-3.7.
+    # 2026-08-08 omen-3.8: T0/T4 both got 'done=<null>' off a resFile whose bytes, dumped one
+    # line later from a fresh read of the same path, were a valid {"done": true, ...}. Root
+    # cause unconfirmed - WaitForExit had already returned, so it isn't an obvious
+    # write-in-flight race - but a null parse now gets up to 3 reads, 150ms apart, before it's
+    # trusted as a real failure instead of whatever made the first read disagree with the file.
     $parsed = $null; $how = 'none'; $rawSeen = $null
     if (Test-Path $resFile) {
-      $rawSeen = (Get-Content $resFile -Raw -Encoding UTF8)
-      $parsed = Read-TaskResult $rawSeen
-      if ($parsed) { $how = 'file' }
-      else { Write-Host "$($t.id): result file has no usable boolean 'done' - raw bytes follow:`n$rawSeen" }
+      for ($try = 1; $try -le 3; $try++) {
+        $rawSeen = (Get-Content $resFile -Raw -Encoding UTF8)
+        $parsed = Read-TaskResult $rawSeen
+        if ($parsed) { $how = 'file'; break }
+        if ($try -lt 3) { Start-Sleep -Milliseconds 150 }
+      }
+      if (-not $parsed) { Write-Host "$($t.id): result file has no usable boolean 'done' after 3 reads - raw bytes follow:`n$rawSeen" }
     }
     if (-not $parsed) {
       foreach ($m in [regex]::Matches($stdout, '\{[^{}]*"done"[\s\S]*?\}')) {

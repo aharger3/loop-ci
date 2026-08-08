@@ -32,5 +32,9 @@ Check 'not json'          'Task complete!'                      '<rejected>'
 Check 'empty file'        ''                                    '<rejected>'
 Check 'whitespace only'   "  `n "                               '<rejected>'
 
+# A top-level JSON array parses fine, but `.done` on the array itself is $null with no error -
+# must resolve to the last element, not read as a rejected/false 'done'.
+Check 'json array wrapper' '[{"done": true, "resultLine": "final"}]' $true
+
 if ($fails) { Write-Host "$fails FAILED"; exit 1 }
 Write-Host 'all result-parse checks pass'

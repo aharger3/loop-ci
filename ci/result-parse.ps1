@@ -25,6 +25,12 @@ function Read-TaskResult {
   try { $o = $Json | ConvertFrom-Json } catch { return $null }
   if ($null -eq $o) { return $null }
 
+  # A lone JSON array value (`[{"done": true}]` instead of `{"done": true}`) parses fine but
+  # `.done` on the array itself is silently $null, not an error - collapse to the last element
+  # so that shape gets read instead of rejected as done=$null.
+  if ($o -is [array]) { $o = $o[-1] }
+  if ($null -eq $o) { return $null }
+
   $d = $o.done
   if ($d -is [bool]) { return $o }
   if ("$d" -in @('true', 'false')) { $o.done = [bool]::Parse("$d"); return $o }
