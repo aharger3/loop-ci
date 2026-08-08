@@ -71,11 +71,14 @@ $TIERS = @{
   # connectors - and `claude --bare` does not read it. Neither is used on this path.
   opus = @{
     model  = 'claude-opus-5'
-    secret = 'CLAUDE_CODE_OAUTH_TOKEN'
-    oauth  = $true
+    secret = 'ANTHROPIC_API_KEY'
+    oauth  = $false
     base   = ''                                     # native api.anthropic.com
-    resume = 'Run `claude setup-token` on any machine (shell command, not a slash command) and set the printed value as repo secret CLAUDE_CODE_OAUTH_TOKEN, then re-run the job. Tokens last a year. To go back to pay-per-token instead, set secret=ANTHROPIC_API_KEY and drop oauth on this block.'
+    resume = 'ANTHROPIC_API_KEY repo secret missing. Set it (pay-per-token, dollars not subscription quota). To go back to the Max subscription instead: run `claude setup-token`, set repo secret CLAUDE_CODE_OAUTH_TOKEN, and flip secret/oauth back on this block.'
   }
+  # 2026-08-08: swapped back to pay-per-token console key - Max subscription quota was
+  # running low. oauth=$true / CLAUDE_CODE_OAUTH_TOKEN is the block above, kept working,
+  # just not selected. Flip both fields back to resume billing the subscription instead.
   # GLM points at OpenRouter, not Z.ai, until Austin's $30 of OpenRouter credit is spent.
   # 2026-08-02: the Z.ai key authenticates but the account returns 429 code 1113
   # "Insufficient balance or no resource package" - a valid key with nothing behind it.
