@@ -50,6 +50,32 @@ Facts each row would otherwise have to rediscover:
   Unicode print kills a row silently.
 - Baseline, do not recompute: **38.0% WR, +0.146R over 1,289 trades**
   (`backtest_metrics_full.json`). Breakeven at 2R is 33.333%.
+- `omen-corpus-1.0` is VOID but **its data landed on `main` via PR #8 and is not to be rebuilt**:
+  `research/corpus_instances.jsonl` (10,379 Discord-alert instances, 3,655 symbol-days,
+  2024-04-02 .. 2026-07-03), `research/corpus_bar_coverage.md` (**3,595 covered symbol-days**),
+  `research/corpus_engine_entries.jsonl` (the engine's fired entries over them, produced through
+  `backtest_week.simulate_day`), and **13,815 1-minute CSVs** under `data_archive/`.
+
+**Two answers Austin gave on 2026-08-07. They are settled inputs — no row re-elicits or
+re-derives them, and no row contradicts them.**
+
+**A. The One Candle Rule, defined at last.** In his words: *"you mark the downclose candle in an
+uptrend and price respects it, or vice versa."* That is the order block — the last opposing-close
+candle before the leg, whose zone price must respect. So `detect_order_block_setup` in
+`omen_bot.py` **is** the One Candle Rule implementation and is not wrong. What is wrong is the
+routing: `SignalType.ONE_CANDLE_RULE` is also used for **fair-value-gap** entries and **flag**
+breakouts (`signal_runner.py:666, 687, 853, 872`), so three unrelated setups share one label and
+none of them has a truthful per-setup win rate. `Trading-Bot-Rulesets.md:68` still reads
+"[TO BE DOCUMENTED]" and must be filled in with the sentence above.
+
+**B. Clustered levels are NOT a no-trade condition.** In his words: *"you can be in between
+levels, what you're looking for is that clean price action break and retest of 1 level, but it
+certainly helps if they are spread out more."* So the requirement is **one** level broken and
+retested cleanly; being between levels is fine, and level spread is a probability input, not a
+gate. This directly contradicts `_is_consolidation` (`signal_runner.py:457`), which returns `[]`
+and abandons the entire bar — logging nothing — whenever PDH, PDL, OR-high and OR-low all sit
+within 0.5% of their mean. **Treat that blanket kill as wrong on Austin's own authority.** T2
+still measures how much damage it does; T5 does not need to relitigate whether it should go.
 
 ## Tasks
 
@@ -57,9 +83,15 @@ Facts each row would otherwise have to rediscover:
 
 - model: glm
 
-`research/bar_coverage.md` lists every mark with `drop_reason = no_archive_file`. Read the missing
-`(symbol, day)` pairs from there, or equivalently from `research/austin_marks_v2.jsonl` minus what
-exists on disk under `data_archive/`. There are **49 distinct pairs covering 54 marks**.
+`research/bar_coverage.md` lists every mark with `drop_reason = no_archive_file` — **49 distinct
+pairs covering 54 marks** as of 3.6.
+
+**Recompute that list against disk before fetching anything.** PR #8 (omen-corpus-1.0, merged
+2026-08-07) banked **13,815 1-minute CSVs** into `data_archive/`, so some of those 49 pairs are
+almost certainly already covered and `research/bar_coverage.md` is stale by exactly that much.
+Derive the real missing set as `research/austin_marks_v2.jsonl` minus what exists on disk, and report
+both numbers: how many of the 49 the corpus backfill already resolved, and how many you actually
+had to fetch.
 
 Fetch each with `polygon_feed.fetch_day(symbol, day_iso)`. It writes into the same `data_archive/`
 layout and a repeat call is a disk read at zero API cost, so this is safe to re-run. Polygon
@@ -136,6 +168,40 @@ would reach. Do **not** change any code in this row.
 
 - **done-when:** `research/miss_autopsy.jsonl` has one line per mark that has bars, each carrying symbol/day/entry_i/tier/miss_reason with miss_reason drawn only from the fixed vocabulary above, and `research/miss_autopsy.md` opens with a reason-by-tier count table whose S column sums to the number of S marks with bars.
 
+### T2.1 -- Same autopsy over the 10,379-instance corpus
+
+- model: glm
+- depends-on: T2
+
+`omen-corpus-1.0` was voided with its T4 unrun, and this row is where that question gets answered.
+Its data is already on `main` and **must not be rebuilt**: `research/corpus_instances.jsonl`
+(10,379 Discord-alert instances over 3,655 symbol-days), `research/corpus_bar_coverage.md`
+(**3,595 covered symbol-days** — the denominator), and `research/corpus_engine_entries.jsonl` (the
+engine's fired entries over those days, produced through `backtest_week.simulate_day`, which is
+the same detection path `backtest_12mo.py` uses).
+
+Reuse **the classifier T2 wrote** — import it, do not write a second one. Two classifiers means
+two vocabularies and the counts stop being comparable, which is the whole point of running this
+against T2's marks.
+
+For every corpus instance that has bars and resolves to a bar index, classify why the engine
+produced no entry there, using T2's identical reason vocabulary. Note the one structural
+difference and state it in the report: corpus instances are **alerts from Discord**, not Austin's
+own graded setups, so there is no S/A/X tier — report reasons as a flat distribution plus a split
+by `channel` (`scarface-alerts` 4,020, `jdub-alerts` 3,080, remainder per
+`research/corpus_instances.md`).
+
+Write `research/corpus_miss_autopsy.jsonl` (one line per classified instance) and
+`research/corpus_miss_autopsy.md` leading with the reason-count table over the whole corpus, then
+the same table split by channel.
+
+Then, and this is the payoff: put the corpus reason distribution **side by side with T2's S-mark
+reason distribution** in a single table. If the same reason tops both at n=3,595 and at n≈77, that
+is the strongest evidence this project has for what to change. If they disagree, say so plainly —
+it would mean Austin's setups fail differently from the alerts, and T5 must follow the S column.
+
+- **done-when:** `research/corpus_miss_autopsy.md` exists, states the number of corpus instances classified out of the 3,595 covered symbol-days, carries a reason-count table using the same vocabulary as `research/miss_autopsy.md`, and contains a side-by-side table comparing the corpus reason distribution against the S-mark reason distribution.
+
 ### T3 -- Rule 7 and rule 10 as numbers
 
 - model: glm
@@ -207,10 +273,16 @@ This row changes no code. `SYMBOLS` stays as it is until Austin picks from the r
 - depends-on: T2
 
 Read `research/miss_autopsy.md` and `research/miss_autopsy.jsonl`. **Do not recompute the
-autopsy.** The top row of that table names the single biggest cause of S-blindness; this row fixes
-that one cause and nothing else.
+autopsy.** The top row of the S column names the single biggest cause of S-blindness; this row
+fixes that one cause and nothing else.
 
-Two changes, both in one row because both touch `signal_runner.py` and parallel edits would
+Also read `research/corpus_miss_autopsy.md` **if it exists** — T2.1 runs alongside this row and
+may not have finished. It is corroboration only: where it agrees with the S table, note that in
+`research/detect_wide.md`; where it disagrees, or where it is absent, **follow the S column
+regardless**. Austin's own graded setups are the target; the Discord alerts are not. Never block
+or fail because that file is missing.
+
+Three changes, all in one row because all three touch `signal_runner.py` and parallel edits would
 conflict.
 
 **Change 1 — the widening.** Implement the minimum change that converts the top miss reason into
@@ -223,9 +295,12 @@ which miss reason it targets and the S-mark count that reason carried.
 Judgement is yours and this is why the row is opus, but the change must be *narrow* — one
 mechanism, not a rewrite. Some likely shapes, depending on what T2 found:
 
-- if `consolidation_early_return` tops the table, the fix is that `_is_consolidation`
-  (`signal_runner.py:457`) blanket-kills the whole bar on a 0.5% level cluster; widen or scope it,
-  and make it *log* the skip instead of returning `[]` silently.
+- if `consolidation_early_return` tops the table, **Austin has already ruled on it** (framing
+  section B): being between clustered levels is fine, what he needs is one level broken and
+  retested cleanly, and level spread is a probability input rather than a gate. So the blanket
+  `return []` in `_is_consolidation` (`signal_runner.py:457`) goes — do not relitigate whether it
+  should. Replace it with a recorded flag on the signal (level spread as a number) and make the
+  path *log* what it used to silently discard.
 - if `no_reference_level` tops it, the fix is the level vocabulary: `HODLOD_PAIR`'s >= 43-bar and
   >= 30-bar-age conditions, or the absence of swing-pivot and round-number levels entirely.
 - if `no_break_retest` tops it, the fix is `detect_break_retest`'s geometry — its window, or its
@@ -246,11 +321,24 @@ the only profitable engine tier (+$62,451 at 36.6% over 693 trades in `backtest_
 while `A+` and `A` both lose money at ~31%, and 3.6 showed no feature currently tells S from A.
 Inventing the mapping today would encode a falsehood in the taxonomy.
 
+**Change 3 — stop three setups sharing one label.** Austin defined the One Candle Rule on
+2026-08-07 (framing section A): *"you mark the downclose candle in an uptrend and price respects
+it, or vice versa"* — which is the order block, so `detect_order_block_setup` is the correct
+implementation of it and stays as it is. The defect is that `SignalType.ONE_CANDLE_RULE` is *also*
+emitted for **fair-value-gap** entries and **flag** breakouts (`signal_runner.py:666, 687, 853,
+872`), so no per-setup win rate for any of the three is truthful. Add `SignalType.FAIR_VALUE_GAP`
+and `SignalType.FLAG` in `omen_bot.py` and route those two branches to them, leaving
+`ONE_CANDLE_RULE` for the order block alone. `FLAG_ENABLED` is already `False`
+(`signal_runner.py:66`), so the flag branch is dormant and this is a label fix, not a behaviour
+change. Then replace the "[TO BE DOCUMENTED]" body of Setup 3 in `Trading-Bot-Rulesets.md:68`
+with Austin's sentence above.
+
 Write `test_detect_wide.py` at the repo root: plain asserts, no pytest. At least one case the
 widened path accepts and one it still rejects, plus an assertion that `DETECT_WIDE` defaults to
-`False`, plus an assertion that a skip grade serialises as `X`.
+`False`, plus an assertion that a skip grade serialises as `X`, plus an assertion that
+`SignalType.FAIR_VALUE_GAP` and `SignalType.ONE_CANDLE_RULE` are distinct values.
 
-- **done-when:** `python test_detect_wide.py` exits 0, `grep -n "DETECT_WIDE" signal_runner.py` shows the module global defaulting to False, `research/detect_wide.md` states the targeted miss reason and a predicted recall number, and `grep -n "austin_tier" signal_runner.py` finds the field.
+- **done-when:** `python test_detect_wide.py` exits 0, `grep -n "DETECT_WIDE" signal_runner.py` shows the module global defaulting to False, `research/detect_wide.md` states the targeted miss reason and a predicted recall number, `grep -n "austin_tier" signal_runner.py` finds the field, and `grep -n "FAIR_VALUE_GAP" omen_bot.py signal_runner.py` shows the new SignalType in both files.
 
 ### T6 -- Re-measure recall, widening OFF vs ON
 
@@ -325,14 +413,18 @@ return grades).
 - model: opus
 - depends-on: everything
 
-Read `research/bar_coverage_v2.md`, `research/miss_autopsy.md`, `research/rule7_rule10.md`,
-`research/universe.md`, `research/detect_wide.md`, `research/recall_ab.md`,
-`research/mark_batch_02.md`. **Do not recompute any number and do not run any backtest.**
+Read `research/bar_coverage_v2.md`, `research/miss_autopsy.md`, `research/corpus_miss_autopsy.md`,
+`research/rule7_rule10.md`, `research/universe.md`, `research/detect_wide.md`,
+`research/recall_ab.md`, `research/mark_batch_02.md`. **Do not recompute any number and do not run
+any backtest.**
 
 Answer, in order:
 
 1. **Why is the engine blind?** Name the top three miss reasons with their S counts, out of the S
-   marks that had bars. If one reason carries the majority, say so plainly.
+   marks that had bars. If one reason carries the majority, say so plainly. Then say whether the
+   10,379-instance corpus agrees: same top reason at n=3,595 symbol-days is corroboration worth
+   stating; a disagreement means Austin's setups fail differently from the Discord alerts, and
+   that is itself a finding.
 2. **Did the widening work?** OFF vs ON fired S recall and any-signal S recall, over stated
    denominators, and what it cost in precision and in signals per symbol per day. If T6's
    mechanism check shows the flag did not take effect, that is the answer and nothing else in T6

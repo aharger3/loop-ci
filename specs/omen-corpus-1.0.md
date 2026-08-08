@@ -1,6 +1,34 @@
+# VOID 2026-08-07 - superseded by omen-3.7, do not run
+
+Run `31122686346` was cancelled by GitHub Actions at 1h28m. **T1, T2.1-T2.4 and T3 all completed**
+and landed via PR #8, merged to `main` 2026-08-07. **T4 and T5 never ran.**
+
+What is on `main` and must not be rebuilt: `research/corpus_instances.jsonl` +
+`corpus_instances.md` (**10,379 instances, 3,655 distinct symbol-days, 2024-04-02 .. 2026-07-03,
+31 symbols**), `research/corpus_bar_coverage.md` (**3,595 covered symbol-days**, the denominator
+T4 was going to divide by), `research/corpus_engine_entries.jsonl` + `.md` (the engine's fired
+entries over all of them, via `backtest_week.simulate_day`), and **13,815 1-minute CSVs** under
+`data_archive/`.
+
+Not being resumed, and the checkboxes are deliberately left unticked: a spec whose boxes are
+hand-corrected goes stale the moment the artifacts move, which is how this spec re-selected on
+every push in the first place. Voiding is one edit and cannot rot.
+
+Where the unfinished work went:
+
+- **T4 ("What the engine cannot see")** is superseded by `specs/omen-3.7.md` **T2** and **T2.1**.
+  T2 asks the same question against Austin's own 159 hand-graded marks and classifies each miss
+  into a fixed vocabulary drawn from `detect_signals`' real control flow; T2.1 then reruns that
+  same classifier over these 3,595 covered corpus symbol-days, so T4's question gets answered on
+  T4's own data with a shared vocabulary. 3.6 already produced the headline number T4 was reaching
+  for: the engine fires on **4 of 77** bars Austin grades S (`research/engine_recall.md`).
+- **T5 (verdict)** is folded into `specs/omen-3.7.md` **T8**.
+- **T2.1-T2.4 (bank the bars)** are superseded by `specs/omen-3.7.md` **T1**, which backfills the
+  49 symbol-days Austin's marks need and adds IWM to `archive_1m.py`'s `SYMBOLS`.
+
 # OMEN CORPUS 1.0 - the corpus as instances, not rules
 
-status: ready
+status: void
 version: omen-corpus-1.0
 repo: aharger3/tradingbot
 doc: Projects/omen-corpus-plan.md
