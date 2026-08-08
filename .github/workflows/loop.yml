@@ -32,7 +32,9 @@ jobs:
       matrix: ${{ steps.p.outputs.matrix }}
       count:  ${{ steps.p.outputs.count }}
     steps:
+      # fetch-depth: 0 so the push-scoped selection below can diff against github.event.before.
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
 
       # Parse EVERY spec before a single token is spent. This is the old -WhatIf, and it is
       # the reason a bad spec costs nothing instead of costing a night.
@@ -40,7 +42,47 @@ jobs:
         shell: pwsh
         run: |
           $only = '${{ inputs.spec }}'
-          $specs = if ($only) { @(Get-Item "specs/$only") } else { Get-ChildItem specs -Filter *.md }
+
+          # A PUSH runs the spec(s) that push touched - nothing else.
+          #
+          # 2026-08-08: this globbed every specs/*.md still marked `ready`, so pushing
+          # omen-corpus-2.0 also re-fired omen-3.7 minutes after omen-3.7's own run had
+          # finished (run 31235908719). Two full executions of the same 5 rows, real opus
+          # spend, a second redundant PR, and Austin watching the loop "duplicate itself".
+          # Rows are never checked off in the spec file, so a spec stays `ready` forever and
+          # every future push kept re-selecting it. Scoping to the diff is the fix; a
+          # workflow_dispatch with a blank `spec` input keeps the old run-everything-ready
+          # behaviour, which is the only place that behaviour was ever actually wanted.
+          $specs =
+            if ($only) {
+              @(Get-Item "specs/$only")
+            } elseif ('${{ github.event_name }}' -eq 'push') {
+              $before = '${{ github.event.before }}'
+              $touched = @(
+                if ($before -and $before -notmatch '^0+$') {
+                  git diff --name-only $before '${{ github.sha }}' -- 'specs/*.md'
+                } else {
+                  git show --name-only --pretty=format: '${{ github.sha }}' -- 'specs/*.md'
+                }) | Where-Object { $_ }
+              # A DELETED spec is touched but gone from disk. That must run nothing at all -
+              # falling through to "every ready spec" here would re-introduce the exact
+              # duplicate this block exists to kill, triggered by a cleanup commit.
+              $names = @($touched | Where-Object { Test-Path $_ })
+              if ($names.Count) {
+                Write-Host "push touched: $($names -join ', ')"
+                @($names | ForEach-Object { Get-Item $_ })
+              } elseif ($touched.Count) {
+                Write-Host "push only removed spec files ($($touched -join ', ')) - nothing to run"
+                @()
+              } else {
+                # Should be unreachable: the workflow only triggers on specs/**.md. If it
+                # happens, say so loudly rather than silently running nothing.
+                Write-Host "::warning::push changed no readable spec file - falling back to every ready spec"
+                Get-ChildItem specs -Filter *.md
+              }
+            } else {
+              Get-ChildItem specs -Filter *.md
+            }
           $rows = @()
           foreach ($s in $specs) {
             # A voided spec (status: anything but ready/running) must never take the rest of
@@ -291,9 +333,21 @@ jobs:
           # PR round-trip bought nothing and cost everything: on omen-3.5 `gh pr create --fill`
           # aborted with "you must first push the current branch to a remote, or use --head",
           # which failed the step and silenced the run's notifications.
-          git push origin HEAD:main \
-            || { git pull --rebase --autostash origin main && git push origin HEAD:main; }
-          echo "DOC_URL=https://github.com/aharger3/obsidian-vault/commit/$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          # 2026-08-08 (omen-3.7): this push died with "failed to push some refs" and NOBODY
+          # heard about it. continue-on-error swallowed the step, DOC_URL never got set, and
+          # the notification simply lost its Results button - so the vault doc silently stayed
+          # stale, which is the exact complaint this step exists to answer. Retry, then say so.
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin main >/dev/null 2>&1 || true
+            if git push origin HEAD:main; then
+              echo "DOC_URL=https://github.com/aharger3/obsidian-vault/commit/$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "DOC_STALE=1" >> "$GITHUB_ENV"
+          echo "::warning::vault doc refresh could not be pushed after 3 tries"
+          exit 1
 
       # The readable summary lives on the run page, rendered. ntfy carries a link and a count,
       # never the report itself - dumping the rollup into a push notification is what made the
@@ -372,8 +426,23 @@ jobs:
               "  $($t.id) - $note"
             }
           }
-          @("$totDone of $totAll tasks done across $($all.Count) spec(s).", "",
-            $highlights, "",
+          # 0 of N confirmed is not a "done". 2026-08-08: omen-3.7 sent "Loop done - 0/9" while
+          # its PR carried 40 changed files and every row's work had actually landed - the
+          # notification read as "the loop ran fine and had nothing to do", which is the single
+          # most misleading thing this channel can say. A run that confirmed nothing needs him.
+          $zero  = ($totDone -eq 0)
+          $type  = if ($zero) { 'blocked' } else { 'done' }
+          $title = if ($zero) { "Loop confirmed nothing - 0/$totAll" } else { "Loop done - $totDone/$totAll" }
+          $zeroNote = if ($zero) {
+            @("", "NOTE: 0 confirmed does not mean 0 done. The runner reports what a task",
+              "confirmed, not what it wrote - open the PR before re-running anything.")
+          } else { @() }
+          $docNote = if ($env:DOC_STALE) {
+            @("", "The vault project doc did NOT update this run (push failed 3x) - it is stale.")
+          } else { @() }
+
+          @("$totDone of $totAll tasks confirmed across $($all.Count) spec(s).", "",
+            $highlights, $zeroNote, $docNote, "",
             "Full per-task table (target, model, every state): $env:RUN_URL") | Set-Content body.txt
 
           # A second button on the notification, not more text in it - Austin 2026-08-06:
@@ -382,5 +451,5 @@ jobs:
           # merged/opened PR. ntfy Actions joins with ';', so this rides alongside "Open run".
           $resultUrl = if ($env:DOC_URL) { $env:DOC_URL } else { ($all | Where-Object { $_.resultUrl } | Select-Object -First 1).resultUrl }
           if ($resultUrl) { $env:EXTRA_ACTIONS = "view, Results, $resultUrl" }
-          bash ci/notify.sh done "Loop done - $totDone/$totAll" body.txt
+          bash ci/notify.sh $type $title body.txt
 
