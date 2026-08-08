@@ -293,12 +293,12 @@ failure, because it checks a row off that nobody did.
     # for why a non-boolean 'done' is a rejection and not a false. A file that exists but does
     # not yield one gets its raw bytes dumped: an unreadable sentinel must never again be able
     # to fail a row silently, which is what cost omen-3.6, omen-corpus-1.0 and omen-3.7.
-    $parsed = $null; $how = 'none'
+    $parsed = $null; $how = 'none'; $rawSeen = $null
     if (Test-Path $resFile) {
-      $raw = (Get-Content $resFile -Raw -Encoding UTF8)
-      $parsed = Read-TaskResult $raw
+      $rawSeen = (Get-Content $resFile -Raw -Encoding UTF8)
+      $parsed = Read-TaskResult $rawSeen
       if ($parsed) { $how = 'file' }
-      else { Write-Host "$($t.id): result file has no usable boolean 'done' - raw bytes follow:`n$raw" }
+      else { Write-Host "$($t.id): result file has no usable boolean 'done' - raw bytes follow:`n$rawSeen" }
     }
     if (-not $parsed) {
       foreach ($m in [regex]::Matches($stdout, '\{[^{}]*"done"[\s\S]*?\}')) {
@@ -306,7 +306,18 @@ failure, because it checks a row off that nobody did.
         if ($o) { $parsed = $o; $how = 'stdout' }
       }
     }
-    Write-Host "$($t.id): result via $how -> done=$(if ($parsed) { $parsed.done } else { '<no result>' })"
+    # 2026-08-08: three tasks (omen-3.7 T3, T6 x2) logged "result via file -> done=" with
+    # NOTHING after the =, on a $parsed the code had just confirmed was non-null (how='file').
+    # That combination should be impossible - $parsed.done is always a real [bool] out of
+    # Read-TaskResult, and PowerShell renders $true/$false as "True"/"False" in a string. If it
+    # happens again this line proves which half is lying: the raw bytes the file actually held,
+    # and .done's real CLR type, not just its truthiness.
+    if ($parsed) {
+      Write-Host "$($t.id): result via $how -> done=$($parsed.done) (type=$($parsed.done.GetType().Name)) resultLine=$($parsed.resultLine)"
+    } else {
+      Write-Host "$($t.id): result via $how -> done=<no result>"
+    }
+    if ($rawSeen) { Write-Host "$($t.id): raw resFile bytes were:`n$rawSeen" }
 
     $mins = [math]::Round(((Get-Date) - $stamp).TotalMinutes, 1)
     if ($parsed) {
