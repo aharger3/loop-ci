@@ -16,6 +16,7 @@ ponytail: stdlib only, and the snapshot is a committed JSON file rather than a d
 import json, os, sys, urllib.request
 
 THRESHOLD = 0.25                      # 25% move is worth a push notification; 5% is noise
+PIN_DRIFT = 0.15                      # a pin 15%+ above the floor is worth re-pinning
 SNAP = os.path.join(os.path.dirname(__file__), "price-snapshot.json")
 
 # What each tier runs today. Keep in sync with the TIERS table in run-spec.ps1.
@@ -24,6 +25,15 @@ SNAP = os.path.join(os.path.dirname(__file__), "price-snapshot.json")
 STACK = {
     "grunt":  "deepseek/deepseek-v4-flash",
     "coding": "z-ai/glm-5.2",
+}
+
+# Provider pinned per model via CLAUDE_CODE_EXTRA_BODY in .github/workflows/loop.yml.
+# /v1/models reports ONE price per model, so the tier checks above are blind to the spread
+# BETWEEN providers serving it - on 2026-08-08 that spread was 0.36 vs 1.40 per M input for
+# the same glm-5.2, i.e. 3.9x. A pin is a bet that one provider stays cheapest, and nothing
+# was watching whether it still is.
+PINS = {
+    "z-ai/glm-5.2": "StreamLake",
 }
 
 def fetch():
@@ -42,6 +52,62 @@ def fetch():
             continue
         out[m["id"]] = {"in": pin, "out": pout, "ctx": m.get("context_length") or 0}
     return out
+
+def endpoints(mid):
+    """Per-provider prices for one model. Returns [] on any failure - a pin check that
+    can't run must not take the tier checks down with it."""
+    req = urllib.request.Request(
+        f"https://openrouter.ai/api/v1/models/{mid}/endpoints",
+        headers={"User-Agent": "loop-ci-price-watch"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            eps = json.load(r)["data"]["endpoints"]
+    except Exception:
+        return []
+    out = []
+    for e in eps:
+        try:
+            out.append({"name": e["provider_name"],
+                        "in": float(e["pricing"]["prompt"]) * 1e6,
+                        "out": float(e["pricing"]["completion"]) * 1e6,
+                        "ctx": e.get("context_length") or 0})
+        except (KeyError, TypeError, ValueError):
+            continue
+    return [e for e in out if e["in"] > 0]
+
+
+def pin_drift(mid, pinned_name):
+    """One line if the pinned provider is gone, or is meaningfully off the floor.
+
+    Point-in-time, so nothing is snapshotted: "is my pin still the cheapest" has a fresh
+    answer every run, unlike "did this price move" which needs last month to compare to.
+    A cheaper provider that truncates context is not cheaper, it is a different model.
+    """
+    eps = endpoints(mid)
+    if not eps:
+        return None
+    # A provider can list the same model twice at different prices (fp8 vs bf16 variants);
+    # on 2026-08-08 five did. Take the provider's CHEAPEST entry so a pricier sibling variant
+    # can't fake a "repin" alarm against a pin that is actually fine.
+    mine = [e for e in eps if e["name"] == pinned_name]
+    pinned = min(mine, key=blended) if mine else None
+    if not pinned:
+        floor = min(eps, key=blended)
+        return (f"PIN DEAD: {pinned_name} no longer serves {mid}. Cheapest now is "
+                f"{floor['name']} at ${floor['in']:.2f}/${floor['out']:.2f}/M. "
+                f"Repin in CLAUDE_CODE_EXTRA_BODY (loop.yml) or requests land anywhere.")
+    rivals = [e for e in eps if e["ctx"] >= pinned["ctx"] * 0.9]
+    floor = min(rivals, key=blended)
+    if floor["name"] == pinned_name:
+        return None
+    gain = 1 - blended(floor) / blended(pinned)
+    if gain < PIN_DRIFT:
+        return None
+    return (f"REPIN {mid}: {floor['name']} is ~{gain*100:.0f}% under your {pinned_name} pin "
+            f"(${floor['in']:.2f}/${floor['out']:.2f} vs ${pinned['in']:.2f}/"
+            f"${pinned['out']:.2f}/M, {floor['ctx']//1000}k ctx). "
+            f"Swap the provider.order in CLAUDE_CODE_EXTRA_BODY.")
+
 
 def blended(m):
     """One number to rank on. Weighted 10:1 toward input because agent work is
@@ -80,6 +146,13 @@ def main():
                 f"${v['in']:.3f}/${v['out']:.3f} with {v['ctx']//1000}k ctx. "
                 f"Swap = one env block in ci/run-spec.ps1."
             )
+
+    # Pin drift is the OTHER half of "am I overpaying": the tier loop above compares models,
+    # this compares providers serving the model already chosen.
+    for mid, pinned_name in PINS.items():
+        line = pin_drift(mid, pinned_name)
+        if line:
+            lines.append(line)
 
     # A challenger stays cheaper every month, so without this the same "qwen is 74% cheaper"
     # line fires forever and becomes the newsletter this script exists to avoid. Only say it
