@@ -446,3 +446,4 @@ Write `research/v37_verdict.md`, ending with a `FOR AUSTIN` section of ten lines
 for someone who trades this tomorrow and will not open any other file.
 
 - **done-when:** `research/v37_verdict.md` exists, answers all five numbered questions in order, and ends with a `FOR AUSTIN` section of ten lines or fewer.
+
