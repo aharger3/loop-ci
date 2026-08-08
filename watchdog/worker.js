@@ -28,7 +28,14 @@ const WINDOW_MIN = 25;                // > the 20-min cron on purpose, see check
 
 export default {
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(check(env, false));
+    // One line per tick, always, even on a quiet one - `wrangler tail` and the Workers
+    // observability panel are the only place this thing is visible, and Austin's own rule is
+    // that the ABSENCE of a per-run line is the alarm. A watchdog with no heartbeat has the
+    // same failure mode as the thing it watches.
+    ctx.waitUntil(
+      check(env, false)
+        .then(v => console.log(`[watchdog] ${v.replace(/\n/g, ' | ')}`))
+        .catch(e => console.error(`[watchdog] FAILED: ${e.message}`)));
   },
   // GET the worker URL for a DRY RUN: same query, same verdict, sends nothing. Safe to expose
   // and safe to curl - a watchdog whose test button pages the phone does not get tested.
