@@ -1,111 +1,153 @@
-# OMEN 3.8 - fix the recall harness's dedupe-before-join bug
+# OMEN 3.8 - close the label-routing bug, stop-bailing consolidation gate, and no_break_retest recall ceiling, with a hard regression gate
 
 status: ready
 version: omen-3.8
 repo: aharger3/tradingbot
 doc: Projects/OMEN-CONSOLIDATED.md
 
-target: fix the one measurement bug omen-3.7's verdict (`research/v37_verdict.md`) named as the
-single prerequisite before any further OMEN work, then re-measure `DETECT_WIDE` OFF vs ON with
-the corrected harness. This version changes no production code and arms no flag — it is a
-measurement fix only.
+target: land three real production-code fixes (label routing, consolidation bail, break-retest
+geometry) plus a Rule 7/10 rewrite, each measured against a locked baseline so no fix that chases
+recall is allowed to drop a mark the engine already fires correctly today.
 
 **Read this framing once; no row re-derives it.**
 
-3.7 merged 2026-08-08. Its verdict (`research/v37_verdict.md`, section 5) found a 19-mark
-contradiction inside `research/recall_ab.md`: deduped any-signal S recall is flat at 27/77 across
-both arms (the basis for "DETECT_WIDE finds zero new S detections"), while the raw no-dedupe
-any-signal S recall rises 29/77 -> 46/77 in the same file. T5 (3.7) predicted DETECT_WIDE would
-newly reach 9 S marks; T6 (3.7)'s deduped headline says 0. One of those is wrong, and the verdict
-traced why: the dedupe is a **day-wide, mark-blind window**, applied before any mark is ever
-consulted.
+Baseline going in (`research/v37_verdict.md`, `research/engine_recall.md`): engine fires an
+S-graded signal on 10/77 S bars (13% recall), any-signal S recall ceiling 27/77 (35%), below the
+40% gate. `research/miss_autopsy.md`'s miss-reason table: `no_break_retest` = 27/77 S misses
+(35% of all S bars, 40.3% of genuine misses) — the single largest lever. `vetoed_htf` and
+`fired_wrong_bar` are next at 10 each (13%).
 
-**The defect, precisely.** `research/t4_engine_recall.py`'s `run_day` (called by
-`research/t6_recall_ab.py` for both arms) replays a whole trading day bar-by-bar and dedupes
-signals into `all_sigs` / `entries` using a `(signal_type, direction, idea) -> last_seen_bar`
-map with a `DEDUPE_BARS`-wide window (`seen_any` / `seen` at lines ~166-198): the **first**
-occurrence of an idea within any `DEDUPE_BARS` window of a **prior** occurrence of the same idea
-is kept, and every later repeat is silently dropped — regardless of where any mark's `entry_i`
-falls. Only after this whole-day collapse does `main()` join the survivors against each mark
-within `+/-TOL` (2) bars (`hit = any(abs(b - m["entry_i"]) <= TOL for b in ent_bars)`). A wider
-retest tolerance (`DETECT_WIDE=True`) makes the engine re-fire the same idea on more candles; if
-an earlier, mark-irrelevant occurrence of that idea already claimed the dedupe slot for the day,
-the occurrence that actually lands next to the mark never survives to be joined — so the mark
-reads as a miss even though the engine detected it right there. This is exactly what the raw
-(no-dedupe) column shows moving (29->46) while the deduped column cannot (27->27): raw is not
-window-collapsed at all, so it cannot hide a mark-adjacent hit behind an earlier unrelated one,
-but it also is not a real per-mark measurement — it is a coarser upper bound that says nothing
-about whether the *nearby* hit is the same repeated idea or two genuinely different setups.
+**T1's target is corrected from the doc's prior framing — verify before you code.** The doc
+(`OMEN-CONSOLIDATED.md`, settled input #1, dated 2026-08-07) says three setups share
+`SignalType.ONE_CANDLE_RULE`. That was already fixed by omen-3.7 T5 (PR #11, commit ac2f32c6):
+`signal_runner.py` now routes FVG to `SignalType.FAIR_VALUE_GAP` and flag breakouts to
+`SignalType.FLAG` — only the two order-block sides (long/short, legitimately one setup) still
+share `ONE_CANDLE_RULE`. **But that fix is incomplete and currently broken on `origin/main`:**
+`omen_bot.py`'s `SignalType` enum (line 8-12) only defines `BREAK_AND_RETEST`, `ONE_CANDLE_RULE`,
+`REENTRY_84_RULE`, `NONE` — it never got `FAIR_VALUE_GAP` or `FLAG` added. `signal_runner.py`
+references `SignalType.FAIR_VALUE_GAP` (line 700, 893) and `SignalType.FLAG` (line 752, 939),
+which raises `AttributeError` at runtime the moment an FVG or flag setup fires. Verified live:
+`python -c "import omen_bot; print([m.name for m in omen_bot.SignalType])"` on `origin/main`
+prints only 4 members, missing both. This is the actual production bug T1 fixes — not a routing
+split, an enum omission that crashes the scanner mid-session.
 
-**The fix.** Join before you dedupe, not after. For each mark, the detection question is "did
-any raw captured signal (from `raw_sigs`, already computed and already returned by `run_day`,
-completely unused for this purpose today) land within `+/-TOL` bars of this mark's `entry_i`" —
-answer that directly per mark, per arm, per grade-bucket (fired-only and any-grade), with **no
-day-wide window collapse involved at all**. Only *after* that per-mark join should repeat counting
-be prevented, and only within the marks themselves: if two marks in `austin_marks_v2.jsonl` are
-close enough that the same raw signal could satisfy both (should not happen at this project's mark
-density, but assert it rather than assume it), count that signal once, not twice, and say in the
-report whether it ever happened.
+### T0 -- lock the baseline and build the regression gate
+- model: opus
+- depends-on: (none)
 
-- Facts each row would otherwise have to rediscover: `research/t4_engine_recall.py`'s `run_day`
-  already returns `(entries, all_sigs, raw_sigs)` — `raw_sigs` is the undeduped list, already
-  computed, already threaded through `main()` for the existing raw-upper-bound column (lines
-  ~261-262). Nothing needs to be recomputed from the engine; this is a re-aggregation of data
-  already produced. `DEDUPE_BARS` and `TOL` (`= 2`) are both module constants already defined.
-- `research/t6_recall_ab.py` is a thin wrapper that points `t4_engine_recall`'s output filenames
-  at `recall_off.md` / `recall_on.md` / `recall_ab.md` and flips `signal_runner.DETECT_WIDE` at
-  runtime before calling `t4_engine_recall.main()` for each arm — reuse it, do not rewrite the
-  flag-flipping or the OFF/ON harness driver.
-- Do not touch `signal_runner.py`. `DETECT_WIDE` stays exactly as 3.7 shipped it (module global,
-  default `False`). This version does not arm it and does not change what ships.
-- Denominators are unchanged from 3.7: 77 S / 60 A / 22 X, 159 marks, all with archived bars.
-- Set `PYTHONIOENCODING=utf-8` before every Python run; the runner's console is cp1252 and a
-  Unicode print kills a row silently.
+Run `research/t4_engine_recall.py` against `research/austin_marks_v2.jsonl` (159 marks) exactly
+as-is, unmodified — this is the existing recall harness, reuse it, do not rewrite it. Capture its
+`research/engine_entries.jsonl` output and derive the exact set of mark keys (`symbol|day|entry_i`
+from `austin_marks_v2.jsonl`, joined to engine entries within the harness's existing +/-2 bar
+tolerance) that currently fire, split by tier (S/A/X) and by signal grade (any-signal vs S-grade).
+Write this locked set to `research/baseline_3.8.json`: `{"any_signal_fired": [...mark keys...],
+"s_grade_fired": [...mark keys...], "precision": <float from engine_recall.md>}`.
 
-## Tasks
+Then write `research/regression_gate.py`: a script that re-runs `t4_engine_recall.py`'s detection
+over the same 159 marks, computes the current fired-mark-key set the same way, diffs it against
+`research/baseline_3.8.json`, and exits non-zero (printing the exact dropped mark keys) if any
+baseline-fired key — any_signal or S-grade — is no longer fired. It must NOT fail on new fires
+(recall going up is fine); it only fails on regressions (a previously-fired mark going silent).
+T1/T2/T3 each run this gate after their change and report its exit code.
 
-### T1 -- Join-first recall, re-measured OFF vs ON
+- **done-when:** `research/baseline_3.8.json` exists with non-empty `any_signal_fired` and
+  `s_grade_fired` lists; `python research/regression_gate.py` run immediately after T0 (no code
+  changed yet) exits 0.
 
+### T2 -- add missing SignalType enum members and stop the FVG/flag crash
 - model: glm
+- depends-on: T0
 
-Rewrite the detection-counting path in `research/t4_engine_recall.py` (or a new
-`research/t8_join_first_recall.py` that imports `run_day` from it, whichever keeps the change to
-one clear location) so that, for each of the OFF and ON arms:
+`omen_bot.py` line 8-12: add `FAIR_VALUE_GAP = "fair_value_gap"` and `FLAG = "flag"` to the
+`SignalType` enum, matching the pattern of the existing members. This is the actual bug — see the
+framing above. Do not touch `signal_runner.py`'s routing, which is already correct; only the enum
+is missing members. After the change, run `python -c "import omen_bot; import signal_runner"` to
+confirm no import-time error, then run `research/regression_gate.py`
+(`python research/regression_gate.py`) and confirm exit 0 — this change only adds enum values, it
+cannot change engine detection, so any regression here means something else broke.
 
-1. Run `run_day` for every marked symbol-day exactly as `t6_recall_ab.py` already does (do not
-   change the replay itself, only what happens to its output).
-2. For each mark, search `raw_sigs` directly for any entry within `+/-TOL` bars of `entry_i`,
-   split into two counts: **any-grade** (any captured signal regardless of status) and
-   **fired-only** (`status == "fired"`). This is the per-mark, join-first hit test. No
-   `DEDUPE_BARS` window is applied before this step.
-3. Track, across all marks, whether any single raw signal (identified by its `(symbol, day, bar,
-   signal_type, direction)` tuple) satisfies more than one mark's join. Report the count if it is
-   ever greater than zero; state "never happened" if it is zero. This is the only dedupe this row
-   performs, and it happens strictly after the join.
-4. Recompute fired S/A/X recall and any-signal S/A/X recall for both arms under this join-first
-   method, over the same 77/60/22 denominators.
+- **done-when:** `python -c "import omen_bot; print(sorted(m.name for m in
+  omen_bot.SignalType))"` includes `FAIR_VALUE_GAP` and `FLAG`, AND
+  `python research/regression_gate.py` exits 0.
 
-Write `research/recall_ab_v2.md`, structured to answer the verdict's open question directly:
+### T3 -- stop `_is_consolidation` from abandoning the bar on clustered levels
+- model: glm
+- depends-on: T0
 
-- A section titled "Old method vs join-first" that puts 3.7's deduped-then-joined numbers
-  (fired S 10/77 -> 14/77, any-signal S 27/77 -> 27/77, both from `research/recall_ab.md`) next
-  to this row's join-first numbers, for both arms, side by side.
-- State plainly which of T5's prediction (9 newly reachable S marks) or T6's headline (0 new S
-  detections) the corrected number supports — or, if it lands somewhere between, say the exact
-  count of newly-detected S marks the join-first method finds that the deduped method missed.
-- Precision is **not** recomputed in this row — it depends on `entries` (the engine's actual
-  trade list), not on this per-mark detection question, and 3.7's precision numbers (38.5% OFF,
-  19.4% ON) stand. State this explicitly so nobody assumes precision moved.
-- One paragraph on what this changes about arming `DETECT_WIDE`: per the 3.7 verdict, precision
-  alone (19.4%, well short of viable) already rules it out regardless of the corrected recall
-  number — state whether that conclusion holds or changes, but do not re-derive the precision
-  argument, only reference it.
+`signal_runner.py`'s `_is_consolidation` (currently ~line 495 on `origin/main`, confirm with
+`grep -n "_is_consolidation" signal_runner.py` since line numbers drift): returns `True` (skip
+all signals for the bar) whenever PDH/PDL/OR-high/OR-low are all within 0.5% of their average.
+Austin's ruling (`OMEN-CONSOLIDATED.md`, settled input #2, 2026-08-07): clustered levels are NOT
+a no-trade gate — one level broken and retested cleanly is enough to trade. Change
+`_is_consolidation` so a clustered-levels bar no longer hard-skips; instead let the normal
+break-and-retest / order-block / FVG detection run against whichever single level the bar
+actually breaks and retests, and only fall through to "no signal" if none of them fire (the
+existing per-setup logic already handles that case — do not add a new bypass path, just stop the
+early `return []`/`return True` short-circuit). Keep the function's docstring accurate to its new
+behavior. Run `research/regression_gate.py` after.
 
-Do not modify `signal_runner.py`, do not change `DETECT_WIDE`'s default, and do not run
-`backtest_12mo.py`.
+- **done-when:** `research/regression_gate.py` exits 0, AND a fresh
+  `python research/t4_engine_recall.py` run shows `consolidation_early_return` miss count (from
+  `research/miss_autopsy.py`'s reclassification, or a manual count of bars where
+  `_is_consolidation` used to return `True`) is lower than the T0 baseline's count for that
+  reason — write the before/after counts to `research/t3_consolidation_effect.md`.
 
-- **done-when:** `research/recall_ab_v2.md` exists, contains a section comparing the old
-  deduped-then-joined numbers against this row's join-first numbers for both arms over the same
-  77/60/22 denominators, states explicitly which of T5's or T6's prior conclusion the corrected
-  number supports (or the exact newly-detected count if neither fully holds), and states that
-  precision is unchanged from `research/recall_ab.md` rather than silently omitting it.
+### T4 -- fix the no_break_retest geometry, the single biggest recall lever
+- model: glm
+- depends-on: T3
+
+`no_break_retest` is 27/77 S misses (35%) per `research/miss_autopsy.md` — `detect_break_retest`
+(in `omen_bot.py`) returns falsy for every reference level on these bars. `research/t5_wide_probe.py`
+already showed widening the retest-proximity tolerance alone (`DETECT_WIDE`) does NOT fix this —
+it roughly doubles fired-S (10->14/77) but halves precision (38.5%->19.4%) and finds zero new
+distinct S marks after dedup; do not re-arm `DETECT_WIDE` or re-run that experiment. Instead:
+read `research/t5_wide_probe.py`'s per-mark output for the 27 S x `no_break_retest` marks (it
+already lists them) and `detect_break_retest`'s actual break/retest test — diagnose why the
+retest never registers on these specific marks (wrong reference level chosen, retest window too
+narrow in a way tolerance-widening doesn't fix, wrong candle field checked, etc.) and correct the
+geometry test itself, not its tolerance. Write findings and the exact fix to
+`research/t4_geometry_fix.md` before editing code — name which of the 27 marks it recovers and
+why, so T5 can cite it. Run `research/regression_gate.py` after the code change.
+
+- **done-when:** `research/regression_gate.py` exits 0, AND a fresh `python research/t4_engine_recall.py`
+  run shows S any-signal recall (currently 27/77) has increased with zero regressions — write the
+  new recall number to `research/t4_geometry_fix.md`.
+
+### T5 -- rewrite Rule 7 and Rule 10 as detection conditions, not thin bullets
+- model: opus
+- depends-on: T0
+
+`Trading-Bot-Rulesets.md` currently states Rules 7 and 10 as one-line bullets with no detection
+logic behind them — `research/rule7_rule10.md` found Rule 7 (retest speed) null for 76/159 marks
+(47.8%, mostly "no break candle identifiable") and Rule 10 null for 56/159 (35.2%). Read
+`research/rule7_rule10.md` in full for the exact feature definitions already built
+(`bars_break_to_retest` for Rule 7; check the file's Rule 10 section for its feature). Rewrite
+both rules in `Trading-Bot-Rulesets.md` as paragraph specs in the style of the existing rules
+(e.g. Rule 6's "position management with breakeven scaling" entry — prose, not a bullet), each
+naming a concrete, always-defined detection condition (no `null` outcome) that the engine can
+evaluate on every bar, replacing the current break-candle-dependent null case. Wire the corrected
+condition into `signal_runner.py`/`omen_bot.py` as real detection code (not doc-only), gated
+behind a new default-OFF flag (matching the `S_GATE`/`DETECT_WIDE` pattern already in the file)
+so this lands byte-identical to today until Austin arms it. Run `research/regression_gate.py`
+after — the flag defaults OFF, so it must be a no-op on the gate.
+
+- **done-when:** `Trading-Bot-Rulesets.md`'s Rule 7 and Rule 10 sections are paragraph specs with
+  a named detection condition each, AND the new flag exists in code defaulting OFF, AND
+  `research/regression_gate.py` exits 0.
+
+### T6 -- final verdict: recall/precision vs T0 baseline, confirm zero regressions
+- model: opus
+- depends-on: everything
+
+Run `research/t4_engine_recall.py` fresh (all T2-T5 changes landed, new Rule 7/10 flag still OFF
+per T5). Run `research/regression_gate.py` one final time against `research/baseline_3.8.json`
+and confirm exit 0. Write `research/v38_verdict.md` (style: `research/v37_verdict.md` — read-only
+synthesis, cite `research/t3_consolidation_effect.md`, `research/t4_geometry_fix.md`, and the
+gate's final exit code, no new numbers computed here) covering: final any-signal and S-grade
+recall vs the T0 baseline (10/77 S, 27/77 any-signal), final precision vs baseline, explicit
+confirmation zero baseline-fired marks regressed (quote the gate's output), and whether the 27/77
+-> 40%-gate distance closed enough to revisit `DETECT_WIDE` or any new filter (do not arm
+anything — recommend only).
+
+- **done-when:** `research/v38_verdict.md` exists and states a final S-recall number, a final
+  any-signal recall number, and the regression gate's final exit code (must be 0).
