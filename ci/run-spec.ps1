@@ -22,6 +22,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'result-parse.ps1')
 $plan = Get-Content $Parsed -Raw -Encoding UTF8 | ConvertFrom-Json
 
 # Snapshot every secret ONCE, before the task loop touches the process environment.
@@ -284,15 +285,22 @@ failure, because it checks a row off that nobody did.
     # The file first. Falling back to a stdout scrape keeps a task that ignored the
     # write-a-file instruction from being thrown away - but the fallback is now the exception,
     # and which path was taken is printed, so "why was this failed?" is answerable from the log.
+    #
+    # What counts as a result is Read-TaskResult's call, not this loop's - see ci/result-parse.ps1
+    # for why a non-boolean 'done' is a rejection and not a false. A file that exists but does
+    # not yield one gets its raw bytes dumped: an unreadable sentinel must never again be able
+    # to fail a row silently, which is what cost omen-3.6, omen-corpus-1.0 and omen-3.7.
     $parsed = $null; $how = 'none'
     if (Test-Path $resFile) {
       $raw = (Get-Content $resFile -Raw -Encoding UTF8)
-      try { $o = $raw | ConvertFrom-Json; if ($null -ne $o.done) { $parsed = $o; $how = 'file' } }
-      catch { Write-Host "$($t.id): result file did not parse as JSON: $raw" }
+      $parsed = Read-TaskResult $raw
+      if ($parsed) { $how = 'file' }
+      else { Write-Host "$($t.id): result file has no usable boolean 'done' - raw bytes follow:`n$raw" }
     }
     if (-not $parsed) {
       foreach ($m in [regex]::Matches($stdout, '\{[^{}]*"done"[\s\S]*?\}')) {
-        try { $o = $m.Value | ConvertFrom-Json; if ($null -ne $o.done) { $parsed = $o; $how = 'stdout' } } catch {}
+        $o = Read-TaskResult $m.Value
+        if ($o) { $parsed = $o; $how = 'stdout' }
       }
     }
     Write-Host "$($t.id): result via $how -> done=$(if ($parsed) { $parsed.done } else { '<no result>' })"
