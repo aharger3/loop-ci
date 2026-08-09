@@ -1,6 +1,6 @@
 # OMEN 3.8 - close the label-routing bug, stop-bailing consolidation gate, and no_break_retest recall ceiling, with a hard regression gate
 
-status: ready
+status: done
 version: omen-3.8
 repo: aharger3/tradingbot
 doc: Projects/OMEN-CONSOLIDATED.md
@@ -82,7 +82,7 @@ cannot change engine detection, so any regression here means something else brok
   python research/regression_gate.py
   ```
 
-### T3 -- stop `_is_consolidation` from abandoning the bar on clustered levels
+### [x] T3 -- stop `_is_consolidation` from abandoning the bar on clustered levels
 - model: glm
 - depends-on: T0
 
@@ -114,7 +114,7 @@ the before/after miss counts — the runner greps for it and the row fails witho
   python -c "import re,sys; m=re.search(r'consolidation_early_return:\s*(\d+)\s*->\s*(\d+)', open('research/t3_consolidation_effect.md').read()); sys.exit(0 if m and int(m.group(2)) < int(m.group(1)) else 1)"
   ```
 
-### T4 -- fix the no_break_retest geometry, the single biggest recall lever
+### [x] T4 -- fix the no_break_retest geometry, the single biggest recall lever
 - model: glm
 - depends-on: T3
 
@@ -145,7 +145,7 @@ before/after S any-signal recall counts out of 77 — the runner greps for it:
   python -c "import re,sys; m=re.search(r's_any_signal_recall:\s*(\d+)\s*->\s*(\d+)', open('research/t4_geometry_fix.md').read()); sys.exit(0 if m and int(m.group(2)) > int(m.group(1)) else 1)"
   ```
 
-### T5 -- rewrite Rule 7 and Rule 10 as detection conditions, not thin bullets
+### [x] T5 -- rewrite Rule 7 and Rule 10 as detection conditions, not thin bullets
 - model: opus
 - depends-on: T0
 
@@ -177,7 +177,7 @@ contains a line beginning `**Detection condition:**` naming the always-defined c
   python -c "import signal_runner,sys; sys.exit(0 if getattr(signal_runner, 'RULE_710_ENABLED', None) is False else 1)"
   ```
 
-### T6 -- final verdict: recall/precision vs T0 baseline, confirm zero regressions
+### [x] T6 -- final verdict: recall/precision vs T0 baseline, confirm zero regressions
 - model: glm
 - depends-on: everything
 
