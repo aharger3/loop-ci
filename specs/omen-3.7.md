@@ -1,6 +1,6 @@
 # OMEN 3.7 - make the engine see the trades Austin takes
 
-status: ready
+status: done
 version: omen-3.7
 repo: aharger3/tradingbot
 doc: Projects/OMEN-CONSOLIDATED.md

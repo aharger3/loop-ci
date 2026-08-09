@@ -1,6 +1,6 @@
 # OMEN CORPUS 2.0 - the chart, not the words
 
-status: ready
+status: done
 version: omen-corpus-2.0
 repo: aharger3/tradingbot
 doc: Projects/OMEN-CONSOLIDATED.md
