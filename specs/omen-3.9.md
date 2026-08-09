@@ -1,6 +1,6 @@
 # OMEN 3.9 - teach the engine the letter S
 
-status: ready
+status: done
 version: omen-3.9
 repo: aharger3/tradingbot
 doc: Projects/OMEN.md
@@ -76,7 +76,7 @@ gracefully and say so in their output if a file is absent — **no row may fail 
 file is missing.**
 
 
-### T1 -- stop the miss taxonomy short-circuiting past the One Candle Rule
+### [x] T1 -- stop the miss taxonomy short-circuiting past the One Candle Rule
 - model: glm
 - depends-on: (none)
 
@@ -124,7 +124,7 @@ by eye, and T8 cites it.
   ```
 
 
-### T2 -- add the `timing_miss` reason: the engine took a later, worse bar
+### [x] T2 -- add the `timing_miss` reason: the engine took a later, worse bar
 - model: glm
 - depends-on: T1
 
@@ -165,7 +165,7 @@ the row is wrong, not the data.
   ```
 
 
-### T3 -- merge mark_batch_02 into a v3 mark corpus (159 -> 184)
+### [x] T3 -- merge mark_batch_02 into a v3 mark corpus (159 -> 184)
 - model: deepseek
 - depends-on: (none)
 
@@ -206,7 +206,7 @@ must stay comparable. T8 reports v3 numbers separately.
   ```
 
 
-### T4 -- make `austin_tier` a computed value: S / A / C / X
+### [x] T4 -- make `austin_tier` a computed value: S / A / C / X
 - model: opus
 - depends-on: (none)
 
@@ -276,7 +276,7 @@ must be read nowhere in this version**; it exists so T8 can A/B it and Austin ca
   ```
 
 
-### T5 -- enforce no-repeat entries behind a flag, and prove the idea key works
+### [x] T5 -- enforce no-repeat entries behind a flag, and prove the idea key works
 - model: glm
 - depends-on: T4
 
@@ -313,7 +313,7 @@ the prose whether it is safe to flip.
   ```
 
 
-### T6 -- widen 84% arming to one-candle-rule losers, and correct the rulebook
+### [x] T6 -- widen 84% arming to one-candle-rule losers, and correct the rulebook
 - model: glm
 - depends-on: (none)
 
@@ -357,7 +357,7 @@ before/after count of armed re-entries over the 159 marks, on its own line:
   ```
 
 
-### T7 -- two pools, two scoreboards
+### [x] T7 -- two pools, two scoreboards
 - model: deepseek
 - depends-on: (none)
 
@@ -402,7 +402,7 @@ it. Write `research/t7_pools.md` with the per-pool table and, on its own line:
   ```
 
 
-### T8 -- verdict: S-only vs today's trading set, side by side
+### [x] T8 -- verdict: S-only vs today's trading set, side by side
 - model: glm
 - depends-on: everything
 
