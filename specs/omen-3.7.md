@@ -423,7 +423,7 @@ return grades).
 
 - **done-when:** `research/mark_batch_02.html` exists, is self-contained with no external script or stylesheet references, embeds exactly 60 chart cards, and `research/mark_batch_02.md` states the S-miss / unmarked-engine-entry split summing to 60.
 
-### T8 -- Verdict
+### [x] T8 -- Verdict
 
 - model: opus
 - depends-on: everything
