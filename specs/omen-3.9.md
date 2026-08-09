@@ -47,12 +47,24 @@ never been a quantity the code could compute.
    under the right higher-timeframe circumstance. C = fits one of the three setups but is
    in-between mesh or targets HOD/LOD. A and C are logged for backtest data and may become
    tradeable later. X is not a signal class at all — it is Austin's "don't trade this" marker.
-3. **Fill veto is bar-relative, not session-relative.** No S when the entry close sits in the top
-   25% of the signal bar's own range (long) or the bottom 25% (short). **Exempt: the 84%
-   re-entry**, where the close-through *is* the signal.
-4. **No repeat entries; scope is symbol + direction + level.** A different level or the other
+3. **Fill veto is bar-relative, not session-relative — and it must not require the candle to
+   close.** No S when the entry price sits in the top 25% of the signal bar's range-so-far (long)
+   or the bottom 25% (short). **Exempt: the 84% re-entry**, where the close-through *is* the
+   signal. Austin, 2026-08-09: *"I don't want to wait for the candle to close for an entry,
+   because sometimes the one you enter on closes really far and I don't want to potentially miss
+   an entry. The 25 percent rule is fine — it just helps the fact of not entering right at low of
+   day."* So the veto is a **fill-quality guard, not a confirmation gate**: it is evaluated
+   against the bar as formed at the moment of entry, and it may never be implemented in a way
+   that defers an entry to the next bar.
+4. **HTF opposition is not settled — measure both arms, decide nothing.** Austin, 2026-08-09:
+   *"HTF note not important, I imagine it changes risk if we get good backtest results, or a level
+   above S that you don't even look for perfect strategies for entry."* `vetoed_htf` is 8 of the
+   40 S-miss cards and three of his notes grade the mark S *"if you get a good fill not at high of
+   day"*. So clause 4 of the S definition ships as a **parameter, not a constant**, and T8 reports
+   both arms side by side.
+5. **No repeat entries; scope is symbol + direction + level.** A different level or the other
    direction is a different idea and may fire. Only an armed 84% re-entry may be the second.
-5. **Compute S, do not gate on it.** Nothing in this spec may change which signals the engine
+6. **Compute S, do not gate on it.** Nothing in this spec may change which signals the engine
    trades. Every new rule is computed into `austin_tier` and/or sits behind a default-OFF flag.
    `research/regression_gate.py` against `research/baseline_3.8.json` must exit 0 on every row —
    it already passes on main, so any failure is this spec's fault.
@@ -211,9 +223,14 @@ exactly this, which Austin settled on 2026-08-09:
 > **S — tradeable.** All four hold: (1) the setup is one of exactly three — break-and-retest, the
 > one candle rule (order block), or an **armed** 84% re-entry; nothing else is ever S. (2) the
 > entry close does not sit in the top 25% of the signal bar's own range (long) or the bottom 25%
-> (short) — *exempt: the 84% re-entry, where the close-through is the signal*. (3) no prior S has
+> (short), measured against the bar **as formed at the moment of entry** — this is a fill-quality
+> guard, never a wait-for-the-close confirmation gate — *exempt: the 84% re-entry, where the
+> close-through is the signal*. (3) no prior S has
 > fired today on the same **symbol + direction + level** — *exempt: an armed 84% re-entry, which
-> is allowed to be the second*. (4) the higher-timeframe bias does not oppose the direction.
+> is allowed to be the second*. (4) the higher-timeframe bias does not oppose the direction —
+> **unless clause 2 passes**, in which case a good fill may carry an opposing HTF. Clause 4 is
+> the one clause Austin has not settled; it is a switch, and both arms are measured before
+> anyone picks.
 > **A** — one or two clauses missing, valid under the right higher-timeframe circumstance.
 > Detected and logged, **not traded**. **C** — fits one of the three setups but is in-between
 > mesh, or targets HOD/LOD. Detected and logged, **not traded**. **X** — not a level worth
@@ -224,8 +241,9 @@ Then implement it in `signal_runner.py` as a module-level function
 `"C"`, called from `_route` so every signal — accepted or skipped — carries
 `sig["austin_tier"]`. Three named helpers, each doing one clause, so T5/T8 can cite them:
 
-- `bar_extreme_veto(sig, candle) -> bool` — clause 2. True when vetoed. Returns False
-  unconditionally for `SignalType.REENTRY_84_RULE`.
+- `bar_extreme_veto(sig, candle) -> bool` — clause 2. True when vetoed. Compares the signal's
+  entry price against the bar's own high/low as of entry — it must not reference a later bar or a
+  confirmed close. Returns False unconditionally for `SignalType.REENTRY_84_RULE`.
 - `idea_key(sig) -> tuple` — clause 3's identity: `(symbol, direction, level_name)`. The level
   name is the reference level the signal was built against (`OR high`/`OR low`/`PDH`/`PDL`/
   `PMH`/`PML`), not the price.
@@ -237,6 +255,11 @@ Clause 1 holds and three or more fail, or the signal targets the session HOD/LOD
 fails -> `C`. The function never returns `"X"`; X is Austin's marking vocabulary, not an engine
 output, and the section above says so.
 
+Clause 4 is a parameter, not a constant: add `HTF_OPPOSITION_VETO = "hard"` at module level,
+accepting `"hard"` (opposed HTF -> never S) or `"fill_override"` (a signal passing clause 2 may
+still be S with an opposing HTF). `compute_austin_tier` reads it; T8 measures both. Default
+`"hard"` because that is today's behaviour.
+
 Add `AUSTIN_TIER_ENABLED = True` at module level (this row is additive and cannot change routing,
 so it ships ON) and `TRADE_S_ONLY = False` — the switch that would restrict `_route` to S. **It
 must be read nowhere in this version**; it exists so T8 can A/B it and Austin can arm it later.
@@ -247,7 +270,7 @@ must be read nowhere in this version**; it exists so T8 can A/B it and Austin ca
   exits 0 — proving routing is byte-identical.
 - **verify:**
   ```bash
-  python -c "import signal_runner as s,sys; sys.exit(0 if all(hasattr(s,n) for n in ('compute_austin_tier','bar_extreme_veto','idea_key','setup_is_s_eligible')) and s.TRADE_S_ONLY is False else 1)"
+  python -c "import signal_runner as s,sys; sys.exit(0 if all(hasattr(s,n) for n in ('compute_austin_tier','bar_extreme_veto','idea_key','setup_is_s_eligible')) and s.TRADE_S_ONLY is False and s.HTF_OPPOSITION_VETO=='hard' else 1)"
   grep -q "Austin's Tiers" Trading-Bot-Rulesets.md
   python research/regression_gate.py
   ```
@@ -353,10 +376,12 @@ pools:
   equity: []   # populated from research/priority_pool.json
 ```
 
-Read `research/priority_pool.json` if it exists — Austin's 14 tickers, shape
-`{"equity_pool_14": ["...", ...]}` — and write them into `pools.equity`. **If the file is absent,
-leave `pools.equity` empty, and say so explicitly in the report.** The row must still pass; this
-is Austin's homework and it may not have landed yet.
+`research/priority_pool.json` **is on main** (commit `48d3237`) and carries Austin's answer:
+`equity_pool_14` = NVDA, TSLA, SPCX, PLTR, AAPL, MU, MSTR, AMZN, HTZ, MSFT, INTC, AMD, GOOGL,
+META; `index_pool` = QQQ, SPY, IWM; `index_futures` = /ES, /NQ. Read it and write
+`equity_pool_14` into `pools.equity` and `index_pool` into `pools.index`. Note in the report that
+**SPCX, HTZ and MSTR have no `data_archive/` coverage**, so no historical recall can be computed
+for them — say which of the 14 are and are not measurable rather than silently dropping them.
 
 Then extend `research/t4_engine_recall.py` so its report breaks recall and precision out by pool
 (`index`, `equity`, `other`) in addition to the existing overall numbers — additive only, do not
@@ -364,13 +389,15 @@ change the overall figures or the file's existing output format, since `regressi
 it. Write `research/t7_pools.md` with the per-pool table and, on its own line:
 
     pools_configured: index=<n> equity=<n>
+    equity_pool_measurable: <n>/14
 
 - **done-when:** `config.yaml` has a `pools:` block with an `index` list of 3; `research/t7_pools.md`
   carries the grep line and a per-pool recall table; `research/regression_gate.py` exits 0.
 - **verify:**
   ```bash
   python -c "import yaml,sys; c=yaml.safe_load(open('config.yaml')); p=c.get('pools') or {}; sys.exit(0 if len(p.get('index') or [])==3 and 'equity' in p else 1)"
-  python -c "import re,sys; sys.exit(0 if re.search(r'pools_configured:\s*index=\d+\s+equity=\d+', open('research/t7_pools.md').read()) else 1)"
+  python -c "import re,sys; t=open('research/t7_pools.md').read(); sys.exit(0 if re.search(r'pools_configured:\s*index=\d+\s+equity=\d+',t) and re.search(r'equity_pool_measurable:\s*\d+/14',t) else 1)"
+  python -c "import yaml,sys; c=yaml.safe_load(open('config.yaml')); sys.exit(0 if len(c['pools']['equity'])==14 else 1)"
   python research/regression_gate.py
   ```
 
@@ -402,6 +429,8 @@ Three grep-able lines, in this exact form:
 
     s_fired_recall_v3: <n>/<total>
     s_only_trades: <n>
+    htf_hard_S: <n>
+    htf_fill_override_S: <n>
     gate exit code: 0
 
 Last line of the file, for the notification and for [[omen-3.9-homework]]: a section
@@ -412,6 +441,6 @@ Last line of the file, for the notification and for [[omen-3.9-homework]]: a sec
 - **verify:**
   ```bash
   python research/regression_gate.py
-  python -c "import re,sys; t=open('research/v39_verdict.md').read(); sys.exit(0 if re.search(r's_fired_recall_v3:\s*\d+/\d+',t) and re.search(r's_only_trades:\s*\d+',t) and re.search(r'gate exit code:\s*0',t,re.I) and '## FOR AUSTIN' in t else 1)"
+  python -c "import re,sys; t=open('research/v39_verdict.md').read(); sys.exit(0 if re.search(r's_fired_recall_v3:\s*\d+/\d+',t) and re.search(r's_only_trades:\s*\d+',t) and re.search(r'htf_hard_S:\s*\d+',t) and re.search(r'htf_fill_override_S:\s*\d+',t) and re.search(r'gate exit code:\s*0',t,re.I) and '## FOR AUSTIN' in t else 1)"
   python -c "import signal_runner as s,sys; sys.exit(0 if s.TRADE_S_ONLY is False else 1)"
   ```
