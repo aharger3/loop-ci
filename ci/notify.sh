@@ -27,21 +27,41 @@ case "$TYPE" in
   *) echo "notify.sh: refusing unknown type '$TYPE' (start|blocked|done)" >&2; exit 2 ;;
 esac
 
+# --- where the buttons go ----------------------------------------------------------------
+# Austin 2026-08-09: "the open run button doesnt take me to a summary, takes me to github app
+# but i dont know where to find [it]." Correct - the Actions run page is a CI artifact, and on
+# an iPhone it deep-links into the GitHub app and lands on a job list. It was also the FIRST
+# button, so it was the one he pressed.
+#
+# The order is now readability-first. He is on his phone, not at the Windows box:
+#   tap the notification  -> OBSIDIAN_URL, the note itself in his own app
+#   button 1 "Summary"    -> the same note rendered on github.com (works with no app at all)
+#   button 2 "Open run"   -> the CI page, for when something actually broke
+# ntfy allows at most 3 actions; Open run stays last on purpose.
+SUMMARY_URL="${SUMMARY_URL:-}"
+OBSIDIAN_URL="${OBSIDIAN_URL:-}"
+RUN_URL="${RUN_URL:-https://github.com}"
+
+ACTIONS=""
+[ -n "$SUMMARY_URL" ]  && ACTIONS="view, Summary, ${SUMMARY_URL}; "
+ACTIONS="${ACTIONS}view, Open run, ${RUN_URL}"
+[ -n "${EXTRA_ACTIONS:-}" ] && ACTIONS="${ACTIONS}; ${EXTRA_ACTIONS}"
+
+# Tapping the notification body itself had NO destination before today - ntfy's `Click` header
+# was never sent, so the tap did nothing and every route to the summary was a small button.
+# obsidian:// opens the real note; if the scheme does not resolve, the Summary button does.
+CLICK="${OBSIDIAN_URL:-${SUMMARY_URL:-$RUN_URL}}"
+
 # --data-binary @file, never -d "$string": a body with a newline or a quote in it silently
 # truncates otherwise, and a truncated BLOCKED message is a missing resume step.
 #
-# EXTRA_ACTIONS (optional): one more "view, Label, url" action, joined onto the same header
-# with ';' per ntfy's own syntax. Still exactly one Actions header, still only 4 types above -
-# this rides on the existing button row, it does not add a new notification.
-ACTIONS="view, Open run, ${RUN_URL:-https://github.com}"
-[ -n "${EXTRA_ACTIONS:-}" ] && ACTIONS="${ACTIONS}; ${EXTRA_ACTIONS}"
-
 # --retry: ntfy.sh is a free public service and a single 5xx or dropped connection would
-# otherwise lose the ONLY signal a run emits. Four types a run, so retrying is free.
+# otherwise lose the ONLY signal a run emits. Three types a run, so retrying is free.
 curl -sS --fail-with-body --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
   -H "Title: ${TITLE}" \
   -H "Priority: ${PRIO}" \
   -H "Tags: ${TAGS}" \
+  -H "Click: ${CLICK}" \
   -H "Actions: ${ACTIONS}" \
   --data-binary "@${BODY}" \
   "https://ntfy.sh/${TOPIC}" > /dev/null

@@ -365,6 +365,10 @@ jobs:
               if [ -n "$DOC" ]; then
                 ENC=$(printf '%s' "$DOC" | sed 's/ /%20/g')
                 echo "VAULT_URL=https://github.com/aharger3/obsidian-vault/blob/main/$ENC" >> "$GITHUB_ENV"
+                # obsidian:// opens the note in his own app, correctly rendered, on the phone he
+                # is actually holding. `file=` takes the vault-relative path WITHOUT .md.
+                # Vault name is literally "Austin's Vault" - the apostrophe must be %27.
+                echo "VAULT_OBSIDIAN=obsidian://open?vault=Austin%27s%20Vault&file=$(printf '%s' "${DOC%.md}" | sed 's/ /%20/g')" >> "$GITHUB_ENV"
               fi
               exit 0
             fi
@@ -430,20 +434,28 @@ jobs:
           $totAll  = ($all | Measure-Object total -Sum).Sum
           $blocked = @($all | ForEach-Object { $_.blocked } | Where-Object { $_ })
 
+          # PLAIN, not note. Austin 2026-08-09: "its very code talk - hard to understand what was
+          # productive." $t.note is the engineer line (filenames, exit codes, metric deltas) and
+          # it belongs in the table on the run page and in the vault note. $t.plain is the same
+          # row's own jargon-free sentence - still that row's brain, not a summarizer's.
+          # Falls back to note so a result file written by an older run still says something.
+          function Say($t) { if ("$($t.plain)".Trim()) { $t.plain } else { $t.note } }
+
           $body = @("$totDone of $totAll rows confirmed across $($all.Count) spec(s).", "")
           foreach ($r in $all) {
             $pr = if ($r.resultUrl) { " $($r.resultUrl)" } else { '' }
             $body += "$($r.version) -> $($r.repo)  ($($r.done)/$($r.total))$pr"
             foreach ($t in $r.tasks | Where-Object { $_.state -eq 'done' }) {
-              $body += "  $($t.id)  $(Short $t.note 100)"
+              $body += "  DONE  $(Short (Say $t) 150)"
             }
             foreach ($t in $r.tasks | Where-Object { $_.state -eq 'failed' }) {
-              $body += "  $($t.id)  FAILED x$($t.attempts) - $(Short $t.note 90)"
+              $body += "  STUCK ($($t.id), tried $($t.attempts)x)  $(Short (Say $t) 140)"
             }
-            $marks = @(@{k='questions';m='?'}, @{k='ideas';m='!'}, @{k='humanTasks';m='>'})
+            # Words, not sigils. `? T4 ...` / `! T4 ...` / `> T4 ...` needed a decoder ring.
+            $marks = @(@{k='questions';m='ASKS YOU:'}, @{k='ideas';m='IDEA:'}, @{k='humanTasks';m='DO:'})
             $extra = @()
             foreach ($s in $marks) {
-              foreach ($i in @($r.($s.k))) { $extra += "  $($s.m) $($i.id)  $(Short $i.text 95)" }
+              foreach ($i in @($r.($s.k))) { $extra += "  $($s.m) $(Short $i.text 140)" }
             }
             if ($extra.Count) { $body += ''; $body += $extra }
             $body += ''
@@ -453,8 +465,11 @@ jobs:
             foreach ($b in $blocked) { $body += "  $b" }
             $body += ''
           }
-          if ($env:VAULT_STALE) { $body += "The vault summary did NOT update this run (push failed 3x).", '' }
-          $body += "Full per-row table: $env:RUN_URL"
+          if ($env:VAULT_STALE) {
+            $body += "Your Obsidian note did NOT update this run (push failed 3x) - the Summary button is stale.", ''
+          }
+          $body += if ($env:VAULT_URL) { 'Tap this notification to open the full write-up in Obsidian.' }
+                   else                { "Full per-row table: $env:RUN_URL" }
 
           # Blocked is reserved for "the loop cannot go on without you" - a missing key, or a
           # run that confirmed nothing at all. Austin 2026-08-09: a failed row inside an
@@ -467,9 +482,9 @@ jobs:
                    else { "Loop done - $totDone/$totAll" }
           $body | Set-Content body.txt
 
-          # A second button on the notification, not more text in it. The vault note is the
-          # readable one; otherwise the first spec's PR.
-          $resultUrl = if ($env:VAULT_URL) { $env:VAULT_URL }
-                       else { ($all | Where-Object { $_.resultUrl } | Select-Object -First 1).resultUrl }
-          if ($resultUrl) { $env:EXTRA_ACTIONS = "view, Summary, $resultUrl" }
+          # Buttons, not more text. The readable destination is the Obsidian note; the CI run
+          # page drops to last because it is the one he pressed and the one that was useless.
+          $env:SUMMARY_URL = if ($env:VAULT_URL) { $env:VAULT_URL }
+                             else { ($all | Where-Object { $_.resultUrl } | Select-Object -First 1).resultUrl }
+          $env:OBSIDIAN_URL = $env:VAULT_OBSIDIAN
           bash ci/notify.sh $type $title body.txt

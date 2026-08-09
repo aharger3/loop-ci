@@ -266,6 +266,10 @@ function Save-Results {
     questions  = Collect 'questions'
     ideas      = Collect 'ideas'
     humanTasks = Collect 'tasks'
+    # Only a row that PASSED verify may retire a line from the project doc. A failed row's
+    # opinion about what is now obsolete is worth nothing - it did not do the thing.
+    retires    = ,@(Collect 'retires' | Where-Object { $id = $_.id
+                                                       ($results | Where-Object { $_['id'] -eq $id -and $_['state'] -eq 'done' }).Count -gt 0 })
     tasks      = $results
   }
   [IO.File]::WriteAllText($Out, ($payload | ConvertTo-Json -Depth 8), (New-Object Text.UTF8Encoding($false)))
@@ -395,16 +399,32 @@ containing one JSON object and nothing else:
 
 {
   "resultLine": "one concrete sentence on what you actually changed - a number, a filename, a behaviour. Not 'implemented the task'.",
+  "plain": "the SAME result with no jargon, for Austin on his phone: what is different now, and why that mattered. No filenames, no function names, no metric abbreviations.",
+  "retires": ["exact sentences or bullets already in the project doc that your work just made FALSE or obsolete - copy them verbatim, see below"],
   "questions": ["only what Austin alone can answer: a preference, a trade-off, a credential, a decision about his own money or time"],
   "ideas": ["improvements you saw while in here but did not do"],
   "tasks": ["off-keyboard things only a human can do"]
 }
 
-All three lists may be empty, and usually should be - do not pad them. Never put a question
-here that you could have answered by reading the repo; go read it instead.
+The lists may be empty, and usually should be - do not pad them. Never put a question here
+that you could have answered by reading the repo; go read it instead.
 
-This file is how your row speaks for itself. Nothing downstream re-summarises your work -
-your resultLine is printed verbatim in Austin's notification, so write it for him.
+resultLine vs plain - write BOTH, they are not the same sentence:
+  resultLine: "recall 13% -> 21%; _is_consolidation no longer returns [] on clustered levels"
+  plain:      "The bot was throwing away setups when price had chopped around a level. It
+               stopped doing that, and it now catches about 1 in 5 of your marked trades
+               instead of 1 in 8."
+The plain line is the ONLY thing that reaches his phone. If it contains a filename or an
+abbreviation he did not coin, rewrite it.
+
+"retires" is how the project doc stops accumulating stale claims. Read the doc named in the
+task's `doc:` field. If a line in it says something your work just disproved, superseded or
+completed, copy that line's text verbatim into "retires". A deterministic script strikes it
+through with a pointer to your row - no model rewrites his notes. Leave it empty if nothing
+in the doc went stale; do NOT retire something merely because you disagree with it, and never
+retire a decision Austin himself made.
+
+This file is how your row speaks for itself. Nothing downstream re-summarises your work.
 "@
 
       Write-Host "::group::$($t.id) attempt $attempt of $Attempts [$tier -> $($cfg.model)]"
@@ -445,14 +465,24 @@ your resultLine is printed verbatim in Austin's notification, so write it for hi
               else                    { '(the agent wrote no resultLine)' }
       if ($v.exit -ne 0) { $note = "$note | verify failed (exit $($v.exit)): $(Trim-Tail $v.out 240)" }
 
+      # plain falls back to note, never to empty: a row with no readable line still has to say
+      # something on his phone. A FAILED row's plain line says so in words, because "T4 FAILED
+      # x3 | verify failed (exit 1)" told him nothing about what to do.
+      $plain = if ($report.plain)   { $report.plain }
+               elseif ($v.exit -eq 0) { $note }
+               elseif ($timedOut)   { "This step ran out of time after $TaskTimeoutMin minutes and did not finish. It needs to be split into smaller pieces." }
+               else                 { "This step ran but its own check said the work is not actually done yet." }
+
       $row = [ordered]@{
         id=$t.id
         state=($(if ($v.exit -eq 0) { 'done' } else { 'failed' }))
         tier=$tier
         note=$note
+        plain=$plain
         verifyExit=$v.exit
         attempts=$attempt
         minutes=$mins
+        retires=$report.retires
         questions=$report.questions
         ideas=$report.ideas
         tasks=$report.tasks

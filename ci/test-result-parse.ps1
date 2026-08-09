@@ -65,5 +65,27 @@ CheckReport 'not json'      'Task complete!'                                    
 CheckReport 'empty'         ''                                                                   ''      0
 CheckReport 'blank q drop'  '{"resultLine":"x","questions":["","  ","real"]}'                    'x'     1
 
+# ---- plain + retires (2026-08-09) -----------------------------------------------------------
+# `plain` is the phone line, `resultLine` is the table line. Both are the ROW'S own words - the
+# distinction is register, not authorship. Empty plain is fine; run-spec.ps1 owns the fallback,
+# because only it knows whether the row passed, timed out or failed its check.
+function CheckPlain($name, $json, $plain, $nRet) {
+  $r = Read-TaskReport $json
+  $gotR = @($r.retires).Count
+  if ("$($r.plain)" -ne "$plain" -or $gotR -ne $nRet) {
+    Write-Host "FAIL $name : expected plain [$plain] ret=$nRet, got [$($r.plain)] ret=$gotR"
+    $script:fails++
+  } else { Write-Host "ok   $name -> plain '$($r.plain)' ret=$gotR" }
+}
+
+CheckPlain 'plain read'     '{"resultLine":"recall 13%->21%","plain":"It catches more of your trades now."}' 'It catches more of your trades now.' 0
+CheckPlain 'plain absent'   '{"resultLine":"recall 13%->21%"}'                                   ''      0
+CheckPlain 'plain alias'    '{"plainLine":"aliased through"}'                                    'aliased through' 0
+CheckPlain 'retires list'   '{"plain":"p","retires":["one stale claim","another"]}'              'p'     2
+CheckPlain 'retires string' '{"plain":"p","retires":"just the one"}'                             'p'     1
+CheckPlain 'retires absent' '{"plain":"p"}'                                                      'p'     0
+# resultLine must NOT leak into plain - a jargon line on his phone is the bug being fixed.
+CheckPlain 'no leak'        '{"resultLine":"_is_consolidation returns [] at signal_runner.py:457"}' ''    0
+
 if ($fails) { Write-Host "$fails FAILED"; exit 1 }
 Write-Host 'all result-parse + result-report checks pass'

@@ -90,6 +90,8 @@ status: live
 
 Some research.
 
+The engine still throws away every setup on a clustered level, which is the top miss reason.
+
 ## 🤖 Agent Questions
 
 - [ ] an older question
@@ -104,17 +106,29 @@ Do the thing.
 $rdir = Join-Path $tmp 'results'
 New-Item -ItemType Directory -Force -Path $rdir | Out-Null
 @{ version='demo-1.0'; repo='aharger3/example'; doc='Projects/Demo.md'; done=1; total=2
-   tasks=@(@{ id='T1'; state='done'; tier='glm'; note='wrote the thing' },
-           @{ id='T2'; state='failed'; tier='opus'; note='verify failed (exit 1)' })
+   tasks=@(@{ id='T1'; state='done'; tier='glm'; note='wrote the thing'; plain='It stopped skipping trades near busy price levels.'; minutes=4; verifyExit=0 },
+           @{ id='T2'; state='failed'; tier='opus'; note='verify failed (exit 1)'; plain=''; minutes=25; verifyExit=1 })
    questions=@(@{ id='T2'; text='which vendor for tick data?' })
    ideas=@(@{ id='T1'; text='reuse the enum' })
-   humanTasks=@(@{ id='T2'; text='top up the polygon plan' }) } |
+   humanTasks=@(@{ id='T2'; text='top up the polygon plan' })
+   retires=@(@{ id='T1'; text='The engine still throws away every setup on a clustered level' },
+             @{ id='T1'; text='Demo' },
+             @{ id='T1'; text='a sentence that appears nowhere in this note at all' }) } |
   ConvertTo-Json -Depth 6 | Set-Content (Join-Path $rdir 'result-demo.json')
 
 pwsh (Join-Path $root 'ci/vault-sync.ps1') -Results $rdir -VaultDir $vault -DocOut (Join-Path $tmp 'doc.txt') | Out-Null
 $n = Get-Content $note -Raw
 Expect 'vault: run block written'      ($n -match '## Last loop run - demo-1\.0')            'no run block'
-Expect 'vault: row table written'      ($n -match '\| T1 \| done \| glm \| wrote the thing \|') 'no row line'
+Expect 'vault: row table written'      ($n -match '\| T1 \| done \| glm \| 4 \| exit 0 \| wrote the thing \|') 'no row line'
+# The note leads with the row's own PLAIN sentence; the engineer line survives in the table.
+Expect 'vault: plain line leads'       ($n -match '- ✅ It stopped skipping trades near busy price levels\.') 'no plain bullet'
+Expect 'vault: plain falls back'       ($n -match '- ❌ still stuck — verify failed \(exit 1\)') 'failed row lost its line'
+Expect 'vault: detail collapsed'       ($n -match '<details><summary>Technical detail per row</summary>') 'no details block'
+# SUBTRACT. A passing row may strike a line it disproved - but only a real, long, non-heading
+# line, and the strike is visible and attributed, never a delete.
+Expect 'vault: stale line struck'      ($n -match '~~The engine still throws away every setup on a clustered level.*~~ <!-- retired by demo-1\.0 T1 -->') 'stale line not struck'
+Expect 'vault: heading never struck'   ($n -notmatch '~~# Demo~~')                            'struck a heading'
+Expect 'vault: short needle ignored'   ($n -match '(?m)^# Demo$')                             'short retire text ate a line'
 Expect 'vault: question filed'         ($n -match 'which vendor for tick data\? — demo-1\.0 T2') 'question missing'
 Expect 'vault: idea filed'             ($n -match 'reuse the enum — demo-1\.0 T1')           'idea missing'
 Expect 'vault: old question kept'      ($n -match 'an older question')                       'clobbered existing content'
@@ -130,6 +144,8 @@ $n = Get-Content $note -Raw
 Expect 'vault: run block not stacked'  ((Select-String -Path $note -Pattern '## Last loop run - demo-1\.0').Count -eq 1) 'block duplicated'
 Expect 'vault: question not repeated'  ((Select-String -Path $note -Pattern 'which vendor for tick data').Count -eq 1)   'question duplicated'
 Expect 'vault: research survives'      ($n -match 'Some research\.')                          'lost the research section'
+# An already-struck line must not be struck again - `~~~~x~~~~` renders as literal tildes.
+Expect 'vault: strike is idempotent'   ((Select-String -Path $note -Pattern 'retired by demo-1\.0 T1').Count -eq 1) 'double-struck'
 
 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 if ($fails) { Write-Host "`n$fails FAILED"; exit 1 }

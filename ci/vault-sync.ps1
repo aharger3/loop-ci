@@ -52,12 +52,29 @@ foreach ($f in $files) {
   [void]$block.Add('')
   [void]$block.Add("$($r.done)/$($r.total) rows confirmed by their own verify command. Target repo ``$($r.repo)``.")
   [void]$block.Add('')
-  [void]$block.Add('| row | state | model | what it did |')
-  [void]$block.Add('|---|---|---|---|')
+
+  # Plain-language first, table second. Austin 2026-08-09: the report was "very code talk - hard
+  # to understand what was productive." So the note leads with each row's OWN jargon-free
+  # sentence and keeps the engineer line in the table below it, where it is still greppable.
+  [void]$block.Add('**What changed**')
+  [void]$block.Add('')
+  foreach ($t in $r.tasks) {
+    $say = if ("$($t.plain)".Trim()) { "$($t.plain)" } else { "$($t.note)" }
+    $say = ($say -replace '\r?\n', ' ').Trim()
+    $lead = if ($t.state -eq 'done') { '✅' } else { '❌ still stuck —' }
+    [void]$block.Add("- $lead $say")
+  }
+  [void]$block.Add('')
+  [void]$block.Add('<details><summary>Technical detail per row</summary>')
+  [void]$block.Add('')
+  [void]$block.Add('| row | state | model | min | verify | what it did |')
+  [void]$block.Add('|---|---|---|---|---|---|')
   foreach ($t in $r.tasks) {
     $note = ("$($t.note)" -replace '\|', '\|' -replace '\r?\n', ' ')
-    [void]$block.Add("| $($t.id) | $($t.state) | $($t.tier) | $note |")
+    [void]$block.Add("| $($t.id) | $($t.state) | $($t.tier) | $($t.minutes) | exit $($t.verifyExit) | $note |")
   }
+  [void]$block.Add('')
+  [void]$block.Add('</details>')
   [void]$block.Add('')
 
   # Replace the previous block for THIS version if one is there, so a re-pushed spec updates
@@ -118,6 +135,37 @@ foreach ($f in $files) {
     }
     if ($add.Count) { $lines.InsertRange($insertAt, [string[]]$add) }
   }
+
+  # ---- 3. SUBTRACT: strike the lines this run made false ---------------------------------
+  # Austin's vault rule is "always adding and subtracting" - a note that only ever grows stops
+  # being true. Until now this script could only add, so every superseded claim sat there
+  # looking current (omen-3.8's own note still asserted things omen-3.7 had already fixed).
+  #
+  # This is a STRIKETHROUGH, never a delete, and only a row that PASSED verify may ask for one
+  # (run-spec.ps1 filters the list). No model rewrites the note - a row nominates exact text it
+  # just disproved, and the match is literal. Guards, because the failure mode is losing his
+  # writing: nothing under 25 chars (too generic), never a heading, never something already
+  # struck, and never inside a `## Last loop run` block this script owns.
+  $retired = 0
+  foreach ($it in @($r.retires | Where-Object { $_ -and $_.text })) {
+    $needle = "$($it.text)".Trim().TrimStart('-', '*', ' ').Trim()
+    if ($needle.Length -lt 25) { continue }
+
+    $inOwn = $false
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+      if ($lines[$i] -match '^##\s+Last loop run') { $inOwn = $true; continue }
+      elseif ($lines[$i] -match '^##\s')           { $inOwn = $false }
+      if ($inOwn) { continue }
+      if ($lines[$i] -match '^#{1,6}\s')  { continue }
+      if ($lines[$i] -like '*~~*')        { continue }
+      if (-not $lines[$i].Contains($needle)) { continue }
+
+      $lines[$i] = "~~$($lines[$i].Trim())~~ <!-- retired by $($r.version) $($it.id) -->"
+      $retired++
+      break   # one line per nomination; a repeated sentence is a doc problem, not ours
+    }
+  }
+  if ($retired) { Write-Host "vault-sync: struck $retired stale line(s) in $($r.doc)" }
 
   [IO.File]::WriteAllText($path, (($lines -join "`n").TrimEnd() + "`n"), (New-Object Text.UTF8Encoding($false)))
   Write-Host "vault-sync: updated $($r.doc) for $($r.version) ($($r.done)/$($r.total), $(@($r.questions).Count) q, $(@($r.ideas).Count) ideas, $(@($r.humanTasks).Count) tasks)"

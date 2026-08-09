@@ -52,7 +52,7 @@ function Read-TaskResult {
 function Read-TaskReport {
   param([string]$Json)
 
-  $empty = [ordered]@{ resultLine = ''; questions = @(); ideas = @(); tasks = @() }
+  $empty = [ordered]@{ resultLine = ''; plain = ''; retires = @(); questions = @(); ideas = @(); tasks = @() }
   if ([string]::IsNullOrWhiteSpace($Json)) { return $empty }
   try { $o = $Json | ConvertFrom-Json } catch { return $empty }
   if ($null -eq $o) { return $empty }
@@ -71,8 +71,19 @@ function Read-TaskReport {
   # 'note' out of habit, and the line is what Austin actually reads in the notification.
   $line = @($o.resultLine, $o.summary, $o.note | Where-Object { $_ -is [string] -and $_.Trim() } |
             Select-Object -First 1)
+
+  # `plain` is the line Austin reads on his phone; `resultLine` is the engineer line that goes
+  # in the table. Austin 2026-08-09: the notification is "very code talk - hard to understand
+  # what was productive." Same row, same brain, two registers - NOT a summarizer, which is the
+  # thing he rejected. If a model only writes one of them, the other falls back to it, so an
+  # older prompt or a lazy model still produces a readable notification.
+  $plain = @($o.plain, $o.plainLine, $o.forAustin | Where-Object { $_ -is [string] -and $_.Trim() } |
+             Select-Object -First 1)
+
   [ordered]@{
-    resultLine = if ($line.Count) { "$($line[0])".Trim() } else { '' }
+    resultLine = if ($line.Count)  { "$($line[0])".Trim() }  else { '' }
+    plain      = if ($plain.Count) { "$($plain[0])".Trim() } else { '' }
+    retires    = AsList $o.retires
     questions  = AsList $o.questions
     ideas      = AsList $o.ideas
     tasks      = AsList $o.tasks

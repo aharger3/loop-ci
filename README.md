@@ -20,7 +20,7 @@ Unchanged from the old loop, minus the FOCUS.md indirection — a spec is now se
 status: ready
 version: omen-v3.2
 repo: aharger3/tradingbot
-doc: Projects/OMEN-CONSOLIDATED.md    (optional; where the run summary lands in the vault)
+doc: Projects/OMEN.md    (the vault note this run writes its summary into, and prunes)
 
 target: one sentence on what this version is for.
 
@@ -76,17 +76,32 @@ cheap model is how a spec quietly produces confident garbage.
 
 ## Notifications
 
-Four, ever, on topic `aharg-loop`:
+Three, ever, on topic `aharg-loop`:
 
 | type | when |
 |---|---|
 | **start** | run began, with an ETA |
-| **blocked** | a human task, with the exact steps to resume |
-| **recommend** | some rows landed, some didn't — worth a look |
-| **done** | finished, with a done/total count and a link |
+| **blocked** | the loop cannot continue without Austin — a key, a decision, or a run that confirmed nothing |
+| **done** | finished, with a done/total count and every row's own plain-language line |
 
-The readable report is the run page, not the push notification. `ci/notify.sh` rejects any
-type outside those four, so a fifth cannot be added by accident.
+`ci/notify.sh` rejects any type outside those three, so a fourth cannot be added by accident.
+A failed row inside an otherwise good run is *listed* in `done`, never paged — `blocked` is the
+only type allowed to wake anyone.
+
+**Where the buttons go.** The notification is a teaser; the report is a note in the Obsidian
+vault, written by `ci/vault-sync.ps1`:
+
+| tap | goes to |
+|---|---|
+| the notification itself | `obsidian://` — the project note in Austin's own app |
+| button **Summary** | the same note rendered on github.com, for when the scheme doesn't resolve |
+| button **Open run** | the Actions run page — last, because it is only useful when CI itself broke |
+
+Ordering matters and was a real bug: **Open run** used to be the first and only button, so it
+was the one pressed, and it deep-links into the GitHub mobile app and lands on a job list.
+
+**Every line in the notification is `plain`, not `resultLine`** — the row's own jargon-free
+sentence. Nothing re-summarises; N rows, N voices.
 
 ## Secrets
 

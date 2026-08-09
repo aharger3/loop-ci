@@ -27,6 +27,8 @@ not a test.
 ```json
 {
   "resultLine": "one concrete sentence — a number, a filename, a behaviour",
+  "plain":      "the same result with zero jargon: what is different now, and why it mattered",
+  "retires":    ["lines already in the doc: note that your work just made false — verbatim"],
   "questions": ["only what Austin alone can answer"],
   "ideas":     ["improvements you saw but did not do"],
   "tasks":     ["off-keyboard things only a human can do"]
@@ -34,10 +36,33 @@ not a test.
 ```
 
 This file cannot fail your row and cannot pass it — it is how your row **speaks
-for itself.** Your `resultLine` is printed verbatim in Austin's phone
-notification and written into his Obsidian note; nothing re-summarises it. Every
-list may be empty and usually should be. Never file a question you could have
-answered by reading the repo — go read it.
+for itself.** Nothing downstream re-summarises it. Every list may be empty and
+usually should be. Never file a question you could have answered by reading the
+repo — go read it.
+
+**`resultLine` and `plain` are both required, and they are not the same
+sentence.** `resultLine` is the engineer line; it goes in the run table and the
+vault note's collapsed detail. `plain` is the ONLY thing that reaches Austin's
+phone, and he read the old notifications as *"very code talk — hard to
+understand what was productive."* No filenames, no function names, no
+abbreviation he did not coin.
+
+```
+resultLine: recall 13% -> 21%; _is_consolidation no longer returns [] on clustered levels
+plain:      The bot was throwing away setups when price had chopped around a level. It
+            stopped doing that, and now catches about 1 in 5 of your marked trades
+            instead of 1 in 8.
+```
+
+**`retires` is the subtract half of the vault rule.** Austin's notes are
+"always adding and subtracting," but until 2026-08-09 the loop could only add,
+so superseded claims sat in his project docs looking current. Read the note
+named in your task's `doc:` field; if a line there is now false because of what
+you did, copy it verbatim into `retires`. `ci/vault-sync.ps1` strikes it through
+and attributes it to your row — deterministic, visible, reversible, and no model
+rewrites his writing. Only a row that PASSES verify can retire anything. Never
+retire a decision Austin made himself, and never retire something merely because
+you disagree with it.
 
 ## Model routing
 **Every spec row names which model runs it.** If a row doesn't, it lands on
