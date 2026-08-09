@@ -3,7 +3,7 @@
 status: done
 version: omen-corpus-2.0
 repo: aharger3/tradingbot
-doc: Projects/OMEN-CONSOLIDATED.md
+doc: Projects/OMEN.md
 
 target: finish the recall number corpus 1.0 never computed, then prove whether a vision model
 reading frames off Scarface and JDub videos can produce bar-anchored instances accurately enough

@@ -3,7 +3,7 @@
 status: done
 version: omen-3.6
 repo: aharger3/tradingbot
-doc: Projects/omen-trading.md
+doc: Projects/OMEN.md
 
 **CLOSED 2026-08-07.** Run `31122686346` was cancelled by GitHub Actions at 1h28m partway
 through T7. T1-T6 completed and landed via PR #9, merged to `main` 2026-08-07; every artifact

@@ -3,7 +3,7 @@
 status: done
 version: omen-3.4
 repo: aharger3/tradingbot
-doc: Projects/omen-trading.md
+doc: Projects/OMEN.md
 
 > **Closed 2026-08-06.** T9's verdict was produced twice (runs `31059153572`/`31067635239`) but
 > both PRs on `tradingbot` sat unmerged for a day, so this spec kept re-selecting on every

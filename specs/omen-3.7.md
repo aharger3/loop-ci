@@ -3,7 +3,7 @@
 status: done
 version: omen-3.7
 repo: aharger3/tradingbot
-doc: Projects/OMEN-CONSOLIDATED.md
+doc: Projects/OMEN.md
 
 target: find out why the engine emits no signal at three quarters of the bars Austin grades S,
 fix the single biggest cause, and re-measure recall. This version is a detection version. It is

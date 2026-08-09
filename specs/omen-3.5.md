@@ -8,7 +8,7 @@ with `research/blind_marks_all.jsonl`, so there was nothing to re-grade - they a
 marking session. T3's HOD/LOD fix is done and merged to tradingbot main (PR #7). T2, T4 and T5
 are carried forward as omen-3.6's T3, T6 and T8. Do not re-run this spec.
 repo: aharger3/tradingbot
-doc: Projects/omen-trading.md
+doc: Projects/OMEN.md
 
 target: apply Austin's fresh tier re-grade to the marks corpus, fix the one-line HOD/LOD bug
 3.4 identified, and re-run H3 (veto) and H9 (confluence) against corrected inputs to see whether

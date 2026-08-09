@@ -31,7 +31,7 @@ Where the unfinished work went:
 status: void
 version: omen-corpus-1.0
 repo: aharger3/tradingbot
-doc: Projects/omen-corpus-plan.md
+doc: Projects/OMEN.md
 
 target: turn 7,805 Discord alerts into bar-anchored instances and measure how many of them the
 engine sees at all - the first corpus work that produces a number about the engine rather than a
