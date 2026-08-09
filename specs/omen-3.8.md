@@ -53,6 +53,11 @@ T1/T2/T3 each run this gate after their change and report its exit code.
 - **done-when:** `research/baseline_3.8.json` exists with non-empty `any_signal_fired` and
   `s_grade_fired` lists; `python research/regression_gate.py` run immediately after T0 (no code
   changed yet) exits 0.
+- **verify:**
+  ```bash
+  python -c "import json,sys; d=json.load(open('research/baseline_3.8.json')); sys.exit(0 if d.get('any_signal_fired') and d.get('s_grade_fired') else 1)"
+  python research/regression_gate.py
+  ```
 
 ### T2 -- add missing SignalType enum members and stop the FVG/flag crash
 - model: glm
@@ -69,6 +74,11 @@ cannot change engine detection, so any regression here means something else brok
 - **done-when:** `python -c "import omen_bot; print(sorted(m.name for m in
   omen_bot.SignalType))"` includes `FAIR_VALUE_GAP` and `FLAG`, AND
   `python research/regression_gate.py` exits 0.
+- **verify:**
+  ```bash
+  python -c "import omen_bot,signal_runner,sys; n={m.name for m in omen_bot.SignalType}; sys.exit(0 if {'FAIR_VALUE_GAP','FLAG'} <= n else 1)"
+  python research/regression_gate.py
+  ```
 
 ### T3 -- stop `_is_consolidation` from abandoning the bar on clustered levels
 - model: glm
@@ -86,11 +96,21 @@ existing per-setup logic already handles that case — do not add a new bypass p
 early `return []`/`return True` short-circuit). Keep the function's docstring accurate to its new
 behavior. Run `research/regression_gate.py` after.
 
+`research/t3_consolidation_effect.md` MUST contain, on its own line and in exactly this form,
+the before/after miss counts — the runner greps for it and the row fails without it:
+
+    consolidation_early_return: <before> -> <after>
+
 - **done-when:** `research/regression_gate.py` exits 0, AND a fresh
   `python research/t4_engine_recall.py` run shows `consolidation_early_return` miss count (from
   `research/miss_autopsy.py`'s reclassification, or a manual count of bars where
   `_is_consolidation` used to return `True`) is lower than the T0 baseline's count for that
   reason — write the before/after counts to `research/t3_consolidation_effect.md`.
+- **verify:**
+  ```bash
+  python research/regression_gate.py
+  python -c "import re,sys; m=re.search(r'consolidation_early_return:\s*(\d+)\s*->\s*(\d+)', open('research/t3_consolidation_effect.md').read()); sys.exit(0 if m and int(m.group(2)) < int(m.group(1)) else 1)"
+  ```
 
 ### T4 -- fix the no_break_retest geometry, the single biggest recall lever
 - model: glm
@@ -109,9 +129,19 @@ geometry test itself, not its tolerance. Write findings and the exact fix to
 `research/t4_geometry_fix.md` before editing code — name which of the 27 marks it recovers and
 why, so T5 can cite it. Run `research/regression_gate.py` after the code change.
 
+`research/t4_geometry_fix.md` MUST contain, on its own line and in exactly this form, the
+before/after S any-signal recall counts out of 77 — the runner greps for it:
+
+    s_any_signal_recall: 27 -> <after>
+
 - **done-when:** `research/regression_gate.py` exits 0, AND a fresh `python research/t4_engine_recall.py`
   run shows S any-signal recall (currently 27/77) has increased with zero regressions — write the
   new recall number to `research/t4_geometry_fix.md`.
+- **verify:**
+  ```bash
+  python research/regression_gate.py
+  python -c "import re,sys; m=re.search(r's_any_signal_recall:\s*(\d+)\s*->\s*(\d+)', open('research/t4_geometry_fix.md').read()); sys.exit(0 if m and int(m.group(2)) > int(m.group(1)) else 1)"
+  ```
 
 ### T5 -- rewrite Rule 7 and Rule 10 as detection conditions, not thin bullets
 - model: opus
@@ -131,12 +161,22 @@ behind a new default-OFF flag (matching the `S_GATE`/`DETECT_WIDE` pattern alrea
 so this lands byte-identical to today until Austin arms it. Run `research/regression_gate.py`
 after — the flag defaults OFF, so it must be a no-op on the gate.
 
+Two names are fixed because the runner checks them, not because they read nicely: the flag is
+`RULE_710_ENABLED = False` at module level in `signal_runner.py`, and each rewritten rule
+contains a line beginning `**Detection condition:**` naming the always-defined condition.
+
 - **done-when:** `Trading-Bot-Rulesets.md`'s Rule 7 and Rule 10 sections are paragraph specs with
   a named detection condition each, AND the new flag exists in code defaulting OFF, AND
   `research/regression_gate.py` exits 0.
+- **verify:**
+  ```bash
+  python research/regression_gate.py
+  test "$(grep -ci 'Detection condition:' Trading-Bot-Rulesets.md)" -ge 2
+  python -c "import signal_runner,sys; sys.exit(0 if getattr(signal_runner, 'RULE_710_ENABLED', None) is False else 1)"
+  ```
 
 ### T6 -- final verdict: recall/precision vs T0 baseline, confirm zero regressions
-- model: opus
+- model: glm
 - depends-on: everything
 
 Run `research/t4_engine_recall.py` fresh (all T2-T5 changes landed, new Rule 7/10 flag still OFF
@@ -149,6 +189,17 @@ confirmation zero baseline-fired marks regressed (quote the gate's output), and 
 -> 40%-gate distance closed enough to revisit `DETECT_WIDE` or any new filter (do not arm
 anything — recommend only).
 
+The verdict must carry three grep-able lines, in this exact form:
+
+    s_grade_recall: <n>/77
+    any_signal_recall: <n>/77
+    gate exit code: 0
+
 - **done-when:** `research/v38_verdict.md` exists and states a final S-recall number, a final
   any-signal recall number, and the regression gate's final exit code (must be 0).
+- **verify:**
+  ```bash
+  python research/regression_gate.py
+  python -c "import re,sys; t=open('research/v38_verdict.md').read(); sys.exit(0 if re.search(r's_grade_recall:\s*\d+/77',t) and re.search(r'any_signal_recall:\s*\d+/77',t) and re.search(r'gate exit code:\s*0',t,re.I) else 1)"
+  ```
 
