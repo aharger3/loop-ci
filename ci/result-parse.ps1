@@ -36,3 +36,45 @@ function Read-TaskResult {
   if ("$d" -in @('true', 'false')) { $o.done = [bool]::Parse("$d"); return $o }
   return $null
 }
+
+# Read-TaskReport - what a row says about ITSELF, now that it no longer decides its own state.
+#
+# 2026-08-09: `verify:` exits decide done/failed, so a missing or malformed 'done' field can no
+# longer fail a row. That flips the parsing rule on its head. Read-TaskResult above is STRICT on
+# purpose (a non-boolean must be rejected so it can never check off a row); this one is LENIENT
+# on purpose, because everything it reads is commentary - a resultLine, and the questions/ideas/
+# tasks the row wants Austin to see. Losing those to a strict parse costs the notification its
+# entire content and costs nothing else. So: take what parses, ignore what does not.
+#
+# Austin 2026-08-09: "so the content is not coming from one brain." Each row writes its own
+# summary and its own questions. Nothing downstream re-summarises them - the notification is a
+# concatenation of N agents' own words, not one agent's retelling of work it did not do.
+function Read-TaskReport {
+  param([string]$Json)
+
+  $empty = [ordered]@{ resultLine = ''; questions = @(); ideas = @(); tasks = @() }
+  if ([string]::IsNullOrWhiteSpace($Json)) { return $empty }
+  try { $o = $Json | ConvertFrom-Json } catch { return $empty }
+  if ($null -eq $o) { return $empty }
+  if ($o -is [array]) { $o = $o[-1] }
+  if ($null -eq $o) { return $empty }
+
+  # A model that writes "questions": "just one" instead of a list is being helpful, not wrong.
+  # Coerce rather than drop - a dropped question is a question Austin never gets asked.
+  function AsList($v) {
+    if ($null -eq $v) { return @() }
+    if ($v -is [string]) { return @($v.Trim() | Where-Object { $_ }) }
+    return @($v | ForEach-Object { "$_".Trim() } | Where-Object { $_ })
+  }
+
+  # resultLine is the one field with a fallback chain: some models reach for 'summary' or
+  # 'note' out of habit, and the line is what Austin actually reads in the notification.
+  $line = @($o.resultLine, $o.summary, $o.note | Where-Object { $_ -is [string] -and $_.Trim() } |
+            Select-Object -First 1)
+  [ordered]@{
+    resultLine = if ($line.Count) { "$($line[0])".Trim() } else { '' }
+    questions  = AsList $o.questions
+    ideas      = AsList $o.ideas
+    tasks      = AsList $o.tasks
+  }
+}

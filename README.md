@@ -20,6 +20,7 @@ Unchanged from the old loop, minus the FOCUS.md indirection — a spec is now se
 status: ready
 version: omen-v3.2
 repo: aharger3/tradingbot
+doc: Projects/OMEN-CONSOLIDATED.md    (optional; where the run summary lands in the vault)
 
 target: one sentence on what this version is for.
 
@@ -29,10 +30,29 @@ target: one sentence on what this version is for.
 
 Prose describing the work.
 
-- **done-when:** the test that proves it.
+- **done-when:** the test that proves it, in English, for the model.
+- **verify:** `the same test as a shell command, for the runner`
 ```
 
-`done-when:` is mandatory. A row with no success test is refused before anything runs.
+Both are mandatory and they are not the same field. `done-when:` is prose the model
+reads. **`verify:` is a shell command the runner executes, and its exit code is the
+only thing that decides whether the row counts as done** — the model's own claim is
+never read. A row with no `verify:` is refused before anything runs.
+
+Two dialects, both legal:
+
+```markdown
+- **verify:** `python research/regression_gate.py`
+
+- **verify:**
+  ```bash
+  python -c "import omen_bot,sys; sys.exit(0 if 'FLAG' in {m.name for m in omen_bot.SignalType} else 1)"
+  python research/regression_gate.py
+  ```
+```
+
+Three attempts per row. Attempt 2 and 3 are handed the verify command's real stderr,
+so a retry is a bug-fix pass, not a re-roll.
 
 ## Models
 
@@ -41,9 +61,14 @@ built for Claude Code, so there is no gateway and no translation layer.
 
 | `model:` tag | goes to | when |
 |---|---|---|
-| `opus`, `fable`, `claude` | `claude-opus-5` @ api.anthropic.com | judgment rows, while console credits last |
-| `glm`, `z-ai/glm-5.2` | `glm-5.2` @ api.z.ai | becomes the top tier when credits run out |
-| anything else, blank | `deepseek-v4-flash` @ api.deepseek.com | grunt work, cheapest |
+| `opus`, `fable`, `claude` | `claude-opus-5` @ api.anthropic.com | judgment rows only |
+| `glm`, `z-ai/glm-5.2` | `z-ai/glm-5.2` @ OpenRouter, StreamLake pinned | bulk work needing judgment |
+| anything else, blank | `deepseek/deepseek-v4-flash` @ OpenRouter, StreamLake pinned | the default. Grunt work, ~10x cheaper than glm |
+
+Both gateway tiers pin their upstream provider with `CLAUDE_CODE_EXTRA_BODY`. Unpinned,
+OpenRouter's weighted routing picks for you: measured 2026-08-09, deepseek-v4-flash is
+$0.068/$0.137 per M on StreamLake and $0.140/$0.280 on thirteen other endpoints — the pin
+is worth 2x on the same model.
 
 **A row is never silently downgraded.** If its tier has no key, the row is *blocked* and you
 get one notification with the exact command to fix it. Downgrading a judgment row onto a
@@ -68,8 +93,8 @@ type outside those four, so a fifth cannot be added by accident.
 | secret | for |
 |---|---|
 | `ANTHROPIC_API_KEY` | opus tier |
-| `DEEPSEEK_API_KEY` | deepseek tier |
-| `ZAI_API_KEY` | glm tier |
+| `OPENROUTER_API_KEY` | glm **and** deepseek tiers — one balance, not two |
+| `ZAI_API_KEY` | glm fallback, if OpenRouter credit runs out |
 | `LOOP_GH_TOKEN` | PAT (repo scope) to check out target repos and open PRs |
 
 ## Dry run
@@ -81,9 +106,20 @@ pwsh ci/parse-spec.ps1 -Spec specs/omen-v3.2.md -Out parsed.json
 pwsh ci/run-spec.ps1 -Parsed parsed.json -WorkDir . -DryRun
 ```
 
-`ci/test-parse.md` is the self-check: 5 rows, 3 tiers, a dependency chain, one `[x]`, and a
-`depends-on: everything`. Parse it and dry-run it — if the printed order or tiers change,
-something broke.
+`ci/test-parse.md` is the parser self-check: 5 rows, 3 tiers, a dependency chain, one `[x]`,
+both `verify:` dialects, and a `depends-on: everything`. Parse it and dry-run it — if the
+printed order, tiers or verify commands change, something broke.
+
+Two more, neither of which spends a token:
+
+```bash
+pwsh ci/test-result-parse.ps1   # what a row is allowed to say about itself
+pwsh ci/test-pipeline.ps1       # checkoff.ps1 + vault-sync.ps1, on throwaway copies
+```
+
+`ci/test-pipeline.ps1` covers the two scripts that edit files by hand. It caught a real bug
+before it shipped: rebuilding a `### T1 -- title` heading from its captured parts produced
+`### [x] T1 - - title`.
 
 ## What this replaced
 

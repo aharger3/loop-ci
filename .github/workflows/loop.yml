@@ -14,11 +14,9 @@ on:
         required: false
 
 # NO workflow-level concurrency group. It used to be `group: loop`, which serialised every run
-# in the repo - push a second spec while the first was going and it sat queued. That group was
-# inherited from loop\.run.lock, which existed because two Windows runs shared one
-# tmp\spec-parsed.json (2026-07-29 00:49: a RUN line with no EXIT). On Actions every run gets
-# its own runner and its own workspace, so there is nothing to clobber and nothing to lock.
-# Austin 2026-08-06: "I want to start pushing multiple runs at the same time."
+# in the repo - push a second spec while the first was going and it sat queued. On Actions every
+# run gets its own runner and its own workspace, so there is nothing to clobber and nothing to
+# lock. Austin 2026-08-06: "I want to start pushing multiple runs at the same time."
 #
 # The real collision is narrower and is handled per-spec on the `run` job below: the SAME spec
 # running twice at once would double-execute its rows and race the same loop/<version> branch.
@@ -37,7 +35,8 @@ jobs:
         with: { fetch-depth: 0 }
 
       # Parse EVERY spec before a single token is spent. This is the old -WhatIf, and it is
-      # the reason a bad spec costs nothing instead of costing a night.
+      # the reason a bad spec costs nothing instead of costing a night. Since 2026-08-09 it is
+      # also where a row with no `verify:` command is rejected - see ci/parse-spec.ps1.
       - id: p
         shell: pwsh
         run: |
@@ -49,10 +48,8 @@ jobs:
           # omen-corpus-2.0 also re-fired omen-3.7 minutes after omen-3.7's own run had
           # finished (run 31235908719). Two full executions of the same 5 rows, real opus
           # spend, a second redundant PR, and Austin watching the loop "duplicate itself".
-          # Rows are never checked off in the spec file, so a spec stays `ready` forever and
-          # every future push kept re-selecting it. Scoping to the diff is the fix; a
-          # workflow_dispatch with a blank `spec` input keeps the old run-everything-ready
-          # behaviour, which is the only place that behaviour was ever actually wanted.
+          # ci/checkoff.ps1 now closes the underlying cause (rows get [x] written back, so a
+          # finished spec stops being pending); this stays as the second line of defence.
           $specs =
             if ($only) {
               @(Get-Item "specs/$only")
@@ -83,30 +80,35 @@ jobs:
             } else {
               Get-ChildItem specs -Filter *.md
             }
-          $rows = @()
+
+          $rows    = @()
+          $skipped = @()
           foreach ($s in $specs) {
-            # A voided spec (status: anything but ready/running) must never take the rest of
-            # the push down with it - Austin 2026-08-05: one VOID spec sitting in specs/
-            # crashed the plan job for every future push until this was caught. Skip it here,
-            # same as the "nothing pending" case below, before parse-spec.ps1 ever sees it -
-            # its own hard Fail() stays in place as the safety net for a spec matrixed in
-            # directly (single-spec workflow_dispatch, or the run job's own re-parse).
+            # A voided or finished spec must never take the rest of the push down with it -
+            # Austin 2026-08-05: one VOID spec sitting in specs/ crashed the plan job for every
+            # future push until this was caught. Skip it here, before parse-spec.ps1 ever sees
+            # it - its own hard Fail() stays as the safety net for a spec matrixed in directly.
             $statusLine = [regex]::Match((Get-Content $s.FullName -Raw), '(?m)^status:\s*(.+?)\s*$')
             $st = if ($statusLine.Success) { $statusLine.Groups[1].Value } else { '' }
             if ($st -and $st -notin @('ready', 'running')) {
-              Write-Host "$($s.Name): status is '$st', not ready - skipping"; continue
+              Write-Host "$($s.Name): status is '$st', not ready - skipping"
+              $skipped += "$($s.BaseName) (status: $st)"; continue
             }
             $json = "parsed-$($s.BaseName).json"
             pwsh ci/parse-spec.ps1 -Spec $s.FullName -Out $json
             if ($LASTEXITCODE -ne 0) { throw "spec $($s.Name) failed to parse - nothing ran" }
             $p = Get-Content $json -Raw | ConvertFrom-Json
             $pending = @($p.tasks | Where-Object { -not $_.done }).Count
-            if ($pending -eq 0) { Write-Host "$($s.Name): nothing pending, skipping"; continue }
+            if ($pending -eq 0) {
+              Write-Host "$($s.Name): nothing pending, skipping"
+              $skipped += "$($s.BaseName) (all rows already [x])"; continue
+            }
             $rows += @{ spec = $s.Name; version = $p.version; repo = $p.repo; pending = $pending }
           }
           $m = @{ include = $rows } | ConvertTo-Json -Depth 6 -Compress
           "matrix=$m" >> $env:GITHUB_OUTPUT
           "count=$($rows.Count)" >> $env:GITHUB_OUTPUT
+          ($skipped -join "`n") | Set-Content skipped.txt
 
       - name: Notify start + ETA
         if: steps.p.outputs.count != '0'
@@ -116,18 +118,43 @@ jobs:
         run: |
           $m = '${{ steps.p.outputs.matrix }}' | ConvertFrom-Json
           # Specs run in parallel, so the ETA is the LONGEST spec, not the sum. 25 min is the
-          # per-task ceiling; real rows finish well under it, so this reads as a worst case.
+          # per-ATTEMPT ceiling and a row gets up to 3 attempts, so this is the realistic case
+          # and the run is hard-capped at 300 min of task time regardless.
           $eta = ($m.include | ForEach-Object { $_.pending * 25 } | Measure-Object -Maximum).Maximum
-          $lines = $m.include | ForEach-Object { "  $($_.version) - $($_.pending) tasks -> $($_.repo)" }
+          $lines = $m.include | ForEach-Object { "  $($_.version) - $($_.pending) rows -> $($_.repo)" }
           @("$($m.include.Count) spec(s) started, running in parallel.", "", $lines, "",
-            "ETA: under $eta min.") | Set-Content body.txt
+            "ETA: under $eta min. Every row is confirmed by running its own verify command.") |
+            Set-Content body.txt
           bash ci/notify.sh start "Loop started - ETA $eta min" body.txt
+
+      # A push that runs nothing used to produce ZERO notifications - no start, no done, no
+      # alarm - which is indistinguishable from the workflow crashing before it began. Austin
+      # 2026-08-09: every push gets exactly one answer. This is the whole answer for an empty
+      # one, and no other job runs.
+      - name: Notify nothing-pending
+        if: steps.p.outputs.count == '0'
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo "Nothing to run - the push touched no spec with pending rows."
+            echo
+            cat skipped.txt
+            echo
+            echo "A spec whose rows are all [x] is finished. /plan the next version."
+          } > body.txt
+          bash ci/notify.sh done "Loop - nothing pending" body.txt
 
   run:
     needs: plan
     if: needs.plan.outputs.count != '0'
     runs-on: ubuntu-latest
     timeout-minutes: 330          # under the 6h hosted-runner ceiling; replaces loop-guard.ps1
+    # contents: write is for ci/checkoff.ps1 pushing [x] back into specs/. A GITHUB_TOKEN push
+    # deliberately does NOT trigger another workflow run, so checking off rows cannot start a
+    # second loop - that is the reason the write-back uses this token and not LOOP_GH_TOKEN.
+    permissions:
+      contents: write
     strategy:
       fail-fast: false            # one spec dying must never take the others with it
       max-parallel: 20
@@ -150,11 +177,11 @@ jobs:
 
       - run: npm i -g @anthropic-ai/claude-code
 
-      # The runner shipped the Claude CLI and nothing else, so any row whose done-when is
-      # "python X.py exits 0" failed on a missing import rather than on its own logic. tradingbot
-      # needs only `requests` + `websocket-client` on the backtest path (no numpy, no pandas -
-      # checked 2026-08-06), so this is seconds, not a build. Non-fatal by design: a target repo
-      # with no requirements.txt, or a dep that will not install, must not stop the LLM rows.
+      # The runner shipped the Claude CLI and nothing else, so any row whose verify is
+      # "python X.py exits 0" failed on a missing import rather than on its own logic. Non-fatal
+      # by design: a target repo with no requirements.txt, or a dep that will not install, must
+      # not stop the LLM rows - but note that it WILL now fail that row's verify honestly,
+      # which is the correct outcome rather than a silent pass.
       - name: Install the target repo's Python deps
         continue-on-error: true
         run: |
@@ -181,32 +208,63 @@ jobs:
         run: pwsh ci/run-spec.ps1 -Parsed parsed.json -WorkDir "$PWD/work" -Out "result-${{ matrix.version }}.json"
 
       # A branch + PR, never a push straight to main - keeps a diff to look at if something's
-      # off. But nobody was reviewing it: omen-3.4's PRs (#4/#5/#6 on tradingbot) sat open up
-      # to a day, so main never reflected "done" - every later push re-selected omen-3.4 as
-      # pending and re-ran it from scratch, twice, on real API spend. 2026-08-06: merge
-      # immediately when the run had zero failed tasks - nothing left to review. A
-      # partial/blocked run still opens a PR and stays open; that case already pages
-      # "blocked" and genuinely needs him to look.
-      - name: Open PR with the work, merge if the run is clean
+      # off. It is merged when at least ONE row was confirmed by its verify command.
+      #
+      # The old rule was "merge only if zero rows failed", and it cost more than it saved:
+      # omen-3.4's PRs sat open for a day, main never reflected the finished rows, and every
+      # later push re-ran the whole spec from scratch on real spend, twice. A partial PR is
+      # still work that PASSED ITS OWN CHECK - and the rows that failed left their edits on the
+      # same branch either way, so holding the branch back only loses the confirmed half. If
+      # NOTHING was confirmed the PR stays open, because then there is genuinely nothing to
+      # trust and the run pages blocked.
+      - name: Open PR with the work, merge if anything was confirmed
         env:
           GH_TOKEN: ${{ secrets.LOOP_GH_TOKEN }}
         run: |
+          # run-spec.ps1 writes its result after every row, so this file exists unless the
+          # script died before row zero. Default to 0 rather than failing the step under -e:
+          # "nothing confirmed" is the right reading of a missing result, and report says so.
+          DONE=$(jq '.done // 0' "result-${{ matrix.version }}.json" 2>/dev/null || echo 0)
           cd work
           git config user.name  "the-loop"
           git config user.email "loop@austinharger.com"
-          if [ -z "$(git status --porcelain)" ]; then echo "no file changes"; exit 0; fi
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "no file changes"
+            echo "MERGED=$([ "$DONE" -gt 0 ] && echo 1 || echo 0)" >> "$GITHUB_ENV"
+            exit 0
+          fi
           git checkout -b "loop/${{ matrix.version }}-${{ github.run_id }}"
           git add -A
           git commit -m "loop: ${{ matrix.version }}"
           git push -u origin HEAD
           PR_URL=$(gh pr create --fill --title "loop: ${{ matrix.version }}" \
             --body "Automated run. See ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
-          FAILED=$(jq '[.tasks[] | select(.state != "done" and .state != "skipped")] | length' "../result-${{ matrix.version }}.json")
-          if [ "$FAILED" = "0" ]; then
-            gh pr merge "$PR_URL" --squash --delete-branch
+          if [ "$DONE" -gt 0 ]; then
+            gh pr merge "$PR_URL" --squash --delete-branch && echo "MERGED=1" >> "$GITHUB_ENV"
+          else
+            echo "MERGED=0" >> "$GITHUB_ENV"
           fi
           jq --arg u "$PR_URL" '.resultUrl = $u' "../result-${{ matrix.version }}.json" > /tmp/r.json
           mv /tmp/r.json "../result-${{ matrix.version }}.json"
+
+      # Only after the work is on main. A [x] whose code never landed is worse than no [x] at
+      # all: the next run would skip the row and build on an artifact that does not exist.
+      - name: Check off the rows that passed verify
+        if: env.MERGED == '1'
+        run: |
+          pwsh ci/checkoff.ps1 -Spec "specs/${{ matrix.spec }}" -Result "result-${{ matrix.version }}.json"
+          [ -z "$(git status --porcelain specs/)" ] && { echo "spec unchanged"; exit 0; }
+          git config user.name  "the-loop"
+          git config user.email "loop@austinharger.com"
+          git add specs/
+          git commit -m "loop: check off verified rows in ${{ matrix.version }} [skip ci]"
+          # Two specs finishing at once both push to main; the loser rebases and retries.
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin main >/dev/null 2>&1 || true
+            git push origin HEAD:main && exit 0
+            sleep 5
+          done
+          echo "::warning::could not push the spec check-off after 3 tries"
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -215,40 +273,37 @@ jobs:
           path: result-*.json
 
   # The loop dying before it starts must not be silent. 2026-08-06 run 31118549809: GitHub
-  # could not allocate a hosted runner ("The job was not acquired by Runner of type hosted even
-  # after multiple attempts"), `plan` was cancelled at 15 minutes with zero steps run, and
-  # `run` + `report` were both SKIPPED - so the whole push produced no notification at all.
-  # `report` cannot cover this: it needs plan's outputs, and a skipped job has none.
+  # could not allocate a hosted runner, `plan` was cancelled at 15 minutes with zero steps run,
+  # and every downstream job was SKIPPED - so the whole push produced no notification at all.
   #
-  # This job needs nothing and always runs. It fires exactly one blocked ntfy, and only when a
-  # job did not reach a normal conclusion - so a healthy run stays as quiet as it is today.
+  # This job needs nothing and always runs. Its condition covers EXACTLY ONE case: `plan` never
+  # produced a usable answer. Anything after a successful plan belongs to `report`, which owns
+  # the single closing notification.
   #
-  # `report` is deliberately NOT in the condition (only in `needs`, for ordering). 2026-08-07
-  # run 31122686346: 16 rows landed, `done` was sent, and then this job paged "Loop never
-  # started" - because report's JOB conclusion was `cancelled` (its doc-refresh step hit the
-  # 5-minute job timeout) even though its final notification step had already run and
-  # succeeded. report's own summary step is `if: always()`, so report owns reporting itself;
-  # this job only covers the case where no spec row ever ran.
+  # 2026-08-09: `report` used to also fire here, because its gate was `needs.plan.outputs.count
+  # != '0'` and a failed plan has NO output - so an empty string compared unequal to '0', report
+  # ran, found no artifacts, and paged "Loop produced no result" alongside this job's "Loop
+  # never started". One broken spec, two high-priority pages, neither of which was wrong. The
+  # gate below is now `plan.result == 'success'`, so exactly one of these two can ever fire.
   alarm:
     needs: [plan, run, report]
-    if: always()
+    if: always() && (needs.plan.result == 'cancelled' || needs.plan.result == 'failure')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - name: Page if the run never really happened
-        if: needs.plan.result == 'cancelled' || needs.plan.result == 'failure' || needs.run.result == 'cancelled'
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           printf '%s\n' \
             "No spec row ran. Nothing was spent." \
             "" \
-            "  plan:   ${{ needs.plan.result }}" \
-            "  run:    ${{ needs.run.result }}" \
+            "  plan: ${{ needs.plan.result }}" \
             "" \
             "plan FAILURE = a spec in specs/ did not parse; the plan job log names the file" \
-            "and the line. Fix the spec and push again." \
+            "and the line. The most common cause now is a row with no verify: command." \
+            "Fix the spec and push again." \
             "" \
             "plan CANCELLED with no steps = GitHub could not allocate a hosted runner. Not" \
             "your fault, nothing to fix: re-run the failed jobs on the run page, or trigger" \
@@ -257,14 +312,12 @@ jobs:
 
   report:
     needs: [plan, run]
-    if: always() && needs.plan.outputs.count != '0'
+    if: always() && needs.plan.result == 'success' && needs.plan.outputs.count != '0'
     runs-on: ubuntu-latest
-    # 25, not 5. The doc-refresh step below runs a full Claude Code turn over a vault clone,
-    # which does not fit in 5 minutes - on 2026-08-06 (run 31122686346) it was still going at
-    # 5:21, the JOB timed out, and a 16-row successful run got a "Loop never started" page.
-    # A job timeout is not survivable by continue-on-error, so the step carries its own
-    # timeout too: the markdown refresh gets 10 minutes and then gives up, leaving the rest of
-    # this job (the notifications) the headroom it needs.
+    # 25, not 5. It used to run a full Claude Code turn over a vault clone and blow a 5-minute
+    # job timeout, which took the notifications down with it (run 31122686346: 16 rows landed,
+    # Austin was paged "Loop never started"). The model is gone from this job entirely now -
+    # see ci/vault-sync.ps1 - so this is headroom, not a requirement.
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
@@ -275,84 +328,57 @@ jobs:
         continue-on-error: true
         with: { path: results, merge-multiple: true }
 
-      # Austin 2026-08-02: "My obsidian projects are always outdated." They were outdated
-      # because updating them was a separate manual step that competed with doing the work.
-      # So it is not a step - it happens here, every run, on the cheapest tier, as a PR.
-      # A spec opts in with `doc: Projects/TradingBot.md`; no doc: line, nothing happens.
-      # DeepSeek removed here 2026-08-03. --model pins only the MAIN turn; Claude Code's
-      # background calls (summarisation, title/topic, subagents) send claude-* ids and the
-      # vendor resolves those itself - on DeepSeek that landed on deepseek-v4-pro while every
-      # visible flag said flash. Austin: DeepSeek Pro is never called again without him, and
-      # a fallback must be something else. So this runs on the same glm tier as everything
-      # else, and the three DEFAULT pins below leave nothing for a vendor to resolve.
+      # Austin 2026-08-02: "My obsidian projects are always outdated." 2026-08-09: "all mds go
+      # in my obsidian, but i want the summary as a link because it would be too much to read
+      # in a notification." So the readable version is a real note in the vault, and the push
+      # notification links to it.
       #
-      # continue-on-error 2026-08-06: this step is a nice-to-have that sits IN FRONT of the
-      # notifications. On omen-3.5 its `gh pr create` failed, `set -e` killed the step, and the
-      # "Summary + final notification" step below never ran - so a 0/3 run and a blocked row
-      # reached Austin as silence. He had asked repeatedly why ntfy stopped working; this was
-      # why. A markdown refresh must never be able to swallow the result of the run.
-      - name: Refresh the vault project doc
+      # No model runs here. ci/vault-sync.ps1 splices each ROW'S OWN sentence into the note -
+      # the previous version had one glm agent rewrite the whole doc from the results, which is
+      # both the "one brain" Austin rejected and a step that could delete text no run touched.
+      #
+      # continue-on-error, because this sits IN FRONT of the notifications. On omen-3.5 the old
+      # version's `gh pr create` failed, `set -e` killed the step, and the notification behind
+      # it never ran - a 0/3 run reached Austin as silence.
+      - name: Write the run summary into the vault
         continue-on-error: true
         timeout-minutes: 10
         env:
-          ANTHROPIC_BASE_URL:  https://openrouter.ai/api
-          ANTHROPIC_AUTH_TOKEN: ${{ secrets.OPENROUTER_API_KEY }}
-          ANTHROPIC_DEFAULT_OPUS_MODEL:   z-ai/glm-5.2
-          ANTHROPIC_DEFAULT_SONNET_MODEL: z-ai/glm-5.2
-          ANTHROPIC_DEFAULT_HAIKU_MODEL:  z-ai/glm-5.2
-          # Same StreamLake pin as the glm tier in ci/run-spec.ps1 - see the comment there
-          # for why this is an env var and not a flag. Keep the two in sync.
-          CLAUDE_CODE_EXTRA_BODY: '{"provider":{"order":["streamlake","baidu","novita"],"allow_fallbacks":false}}'
-          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1'
           GH_TOKEN: ${{ secrets.LOOP_GH_TOKEN }}
         run: |
-          docs=$(jq -r '.doc // empty' results/*.json | sort -u)
-          [ -z "$docs" ] && { echo "no doc: field in any spec"; exit 0; }
+          set -e
           git clone --depth 1 "https://x-access-token:$GH_TOKEN@github.com/aharger3/obsidian-vault.git" vault
-          npm i -g @anthropic-ai/claude-code
+          pwsh ci/vault-sync.ps1 -Results results -VaultDir vault -DocOut vault-doc.txt
           cd vault
-          for d in $docs; do
-            cat ../results/*.json > /tmp/r.json
-            claude -p --model z-ai/glm-5.2 --permission-mode bypassPermissions <<EOF
-          Rewrite the project doc "$d" in this vault from the run results below.
-
-          $(cat /tmp/r.json)
-
-          Rules: keep it MINIMAL and current �?" it is read as the reference for the next plan,
-          so stale or padded text actively causes bad specs. Delete anything the results show
-          is finished or wrong. Keep four sections: what it is, current state, what's next,
-          open questions. No changelog, no history, no narration of this run. If the results
-          show the project is working well enough to be a product, say so in one line under
-          current state so Austin can decide whether to archive it.
-          EOF
-          done
-          if [ -z "$(git status --porcelain)" ]; then echo "doc already current"; exit 0; fi
+          if [ -z "$(git status --porcelain)" ]; then echo "vault already current"; exit 0; fi
           git config user.name the-loop && git config user.email loop@austinharger.com
-          git add -A && git commit -m "loop: refresh project docs"
-          # Straight to main. This is markdown that was squash-merged on sight anyway, so the
-          # PR round-trip bought nothing and cost everything: on omen-3.5 `gh pr create --fill`
-          # aborted with "you must first push the current branch to a remote, or use --head",
-          # which failed the step and silenced the run's notifications.
+          git add -A && git commit -m "loop: run summary"
+          # Straight to main. This is markdown that was squash-merged on sight anyway.
           # 2026-08-08 (omen-3.7): this push died with "failed to push some refs" and NOBODY
-          # heard about it. continue-on-error swallowed the step, DOC_URL never got set, and
-          # the notification simply lost its Results button - so the vault doc silently stayed
-          # stale, which is the exact complaint this step exists to answer. Retry, then say so.
+          # heard about it - continue-on-error swallowed the step and the notification silently
+          # lost its Results button, so the doc stayed stale, which is the exact complaint this
+          # step exists to answer. Retry, then say so out loud.
           for i in 1 2 3; do
             git pull --rebase --autostash origin main >/dev/null 2>&1 || true
             if git push origin HEAD:main; then
-              echo "DOC_URL=https://github.com/aharger3/obsidian-vault/commit/$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+              DOC=$(cat ../vault-doc.txt 2>/dev/null || true)
+              if [ -n "$DOC" ]; then
+                ENC=$(printf '%s' "$DOC" | sed 's/ /%20/g')
+                echo "VAULT_URL=https://github.com/aharger3/obsidian-vault/blob/main/$ENC" >> "$GITHUB_ENV"
+              fi
               exit 0
             fi
             sleep 5
           done
-          echo "DOC_STALE=1" >> "$GITHUB_ENV"
-          echo "::warning::vault doc refresh could not be pushed after 3 tries"
+          echo "VAULT_STALE=1" >> "$GITHUB_ENV"
+          echo "::warning::vault summary could not be pushed after 3 tries"
           exit 1
 
-      # The readable summary lives on the run page, rendered. ntfy carries a link and a count,
-      # never the report itself - dumping the rollup into a push notification is what made the
-      # old channel unreadable.
-      - name: Summary + final notification
+      # ONE closing notification per run - `done` if the run stands on its own, `blocked` if it
+      # needs him. The four-type channel became three on 2026-08-09: `recommend` is gone, and
+      # the questions/ideas/tasks each row raised ride inside this message, tagged with the row
+      # that raised them. Austin: "so the content is not coming from one brain."
+      - name: Summary + closing notification
         if: always()
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -362,11 +388,10 @@ jobs:
                    ForEach-Object { Get-Content $_ -Raw | ConvertFrom-Json })
 
           # No result file at all = the run job died before run-spec.ps1 wrote one (bad
-          # checkout, npm install, spec re-parse). Without this the counts below are both
-          # $null and the run reports itself as "Loop done - /" - a green notification for a
-          # run that did nothing. That is worse than silence, so it pages BLOCKED instead.
+          # checkout, npm install, spec re-parse). run-spec.ps1 writes after EVERY row now, so
+          # reaching here means it never got past row zero.
           if (-not $all.Count) {
-            @("The run job produced no result file, so NO spec row can be confirmed as done.",
+            @("The run job produced no result file, so NO spec row can be confirmed.",
               "", "  run job: ${{ needs.run.result }}", "",
               "This is a crash before the task loop, not a failed task. Open the run page,",
               "read the first red step in the 'run' job, fix that, and push again.") |
@@ -375,81 +400,76 @@ jobs:
             exit 0
           }
 
+          function Short($s, $n) {
+            $s = ("$s" -replace '\s+', ' ').Trim()
+            if ($s.Length -gt $n) { $s.Substring(0, $n) + '...' } else { $s }
+          }
+
+          # --- the rendered report: full depth, one tap away, never in the notification ------
           $md = @("# Loop run", "")
-          $blocked = @(); $recommend = @()
           foreach ($r in $all) {
-            $md += "## $($r.version) - $($r.done)/$($r.total) done"
-            $md += "", "**Target:** $($r.target)", "", "| task | state | model | note |", "|---|---|---|---|"
-            foreach ($t in $r.tasks) { $md += "| $($t.id) | $($t.state) | $($t.tier) | $($t.note) |" }
-            $md += ""
-            $blocked += $r.blocked
-            # A row that failed on the top tier is the signal worth a nudge: not broken, but
-            # not progressing either. That is the whole "recommendation" channel.
-            # Austin 2026-08-02: deciding the obvious next step is work he does not want, and
-            # having it decided for him is the point. So this DOES recommend the next version.
-            # What it must never do is what v3.0's T13 did on 2026-08-01: mark itself done and
-            # advance the version on a run that failed verification. The difference is that
-            # $r.tasks state is written by the RUNNER, not by the model claiming its own row
-            # passed - so a recommendation can only ever be built out of rows that really ran.
-            $failed = @($r.tasks | Where-Object { $_.state -ne 'done' -and $_.state -ne 'skipped' })
-            if ($failed.Count -and $r.done -gt 0) {
-              $ids = ($failed | ForEach-Object { $_.id }) -join ', '
-              $recommend += "$($r.version): $($r.done) landed, $($failed.Count) did not ($ids)." +
-                            " Next version should carry those forward -- run: /plan $($r.version)"
+            $md += "## $($r.version) - $($r.done)/$($r.total) confirmed"
+            $md += "", "**Target:** $($r.target)", ""
+            $md += "| row | state | model | attempts | min | verify | what it did |", "|---|---|---|---|---|---|---|"
+            foreach ($t in $r.tasks) {
+              $md += "| $($t.id) | $($t.state) | $($t.tier) | $($t.attempts) | $($t.minutes) | exit $($t.verifyExit) | $(("$($t.note)" -replace '\|','\|')) |"
             }
-            elseif ($r.done -eq $r.total -and $r.total -gt 0) {
-              $recommend += "$($r.version): all $($r.done) rows landed. Pick the next target -- run: /plan"
+            $md += ""
+            foreach ($s in @(@{k='questions';h='Questions'}, @{k='ideas';h='Ideas'}, @{k='humanTasks';h='Human tasks'})) {
+              $items = @($r.($s.k))
+              if (-not $items.Count) { continue }
+              $md += "### $($s.h)", ""
+              foreach ($i in $items) { $md += "- **$($i.id)** - $($i.text)" }
+              $md += ""
             }
           }
           ($md -join "`n") | Set-Content $env:GITHUB_STEP_SUMMARY
 
+          # --- the notification: each row's own sentence, nothing re-summarised -------------
           $totDone = ($all | Measure-Object done -Sum).Sum
           $totAll  = ($all | Measure-Object total -Sum).Sum
+          $blocked = @($all | ForEach-Object { $_.blocked } | Where-Object { $_ })
 
-          if ($blocked.Count) {
-            @("$($blocked.Count) row(s) blocked. Exact steps to get it running again:", "",
-              ($blocked | ForEach-Object { "- $_" })) | Set-Content body.txt
-            bash ci/notify.sh blocked "Loop blocked - $($blocked.Count) row(s) need you" body.txt
-          }
-          if ($recommend.Count) {
-            $recommend | Set-Content body.txt
-            bash ci/notify.sh recommend "Loop recommendation" body.txt
-          }
-          # Austin 2026-08-05: counts alone don't tell him what happened. One line per DONE
-          # task (its own resultLine, not a re-summary of it) is the highlight; the full
-          # per-task table with target/model/state stays on $GITHUB_STEP_SUMMARY (built
-          # above) so the notification body stays short and the depth is one tap away.
-          $highlights = foreach ($r in $all) {
-            "$($r.version):"
+          $body = @("$totDone of $totAll rows confirmed across $($all.Count) spec(s).", "")
+          foreach ($r in $all) {
+            $pr = if ($r.resultUrl) { " $($r.resultUrl)" } else { '' }
+            $body += "$($r.version) -> $($r.repo)  ($($r.done)/$($r.total))$pr"
             foreach ($t in $r.tasks | Where-Object { $_.state -eq 'done' }) {
-              $note = $t.note; if ($note.Length -gt 90) { $note = $note.Substring(0, 90) + '...' }
-              "  $($t.id) - $note"
+              $body += "  $($t.id)  $(Short $t.note 100)"
             }
+            foreach ($t in $r.tasks | Where-Object { $_.state -eq 'failed' }) {
+              $body += "  $($t.id)  FAILED x$($t.attempts) - $(Short $t.note 90)"
+            }
+            $marks = @(@{k='questions';m='?'}, @{k='ideas';m='!'}, @{k='humanTasks';m='>'})
+            $extra = @()
+            foreach ($s in $marks) {
+              foreach ($i in @($r.($s.k))) { $extra += "  $($s.m) $($i.id)  $(Short $i.text 95)" }
+            }
+            if ($extra.Count) { $body += ''; $body += $extra }
+            $body += ''
           }
-          # 0 of N confirmed is not a "done". 2026-08-08: omen-3.7 sent "Loop done - 0/9" while
-          # its PR carried 40 changed files and every row's work had actually landed - the
-          # notification read as "the loop ran fine and had nothing to do", which is the single
-          # most misleading thing this channel can say. A run that confirmed nothing needs him.
-          $zero  = ($totDone -eq 0)
-          $type  = if ($zero) { 'blocked' } else { 'done' }
-          $title = if ($zero) { "Loop confirmed nothing - 0/$totAll" } else { "Loop done - $totDone/$totAll" }
-          $zeroNote = if ($zero) {
-            @("", "NOTE: 0 confirmed does not mean 0 done. The runner reports what a task",
-              "confirmed, not what it wrote - open the PR before re-running anything.")
-          } else { @() }
-          $docNote = if ($env:DOC_STALE) {
-            @("", "The vault project doc did NOT update this run (push failed 3x) - it is stale.")
-          } else { @() }
+          if ($blocked.Count) {
+            $body += "NEEDS YOU:"
+            foreach ($b in $blocked) { $body += "  $b" }
+            $body += ''
+          }
+          if ($env:VAULT_STALE) { $body += "The vault summary did NOT update this run (push failed 3x).", '' }
+          $body += "Full per-row table: $env:RUN_URL"
 
-          @("$totDone of $totAll tasks confirmed across $($all.Count) spec(s).", "",
-            $highlights, $zeroNote, $docNote, "",
-            "Full per-task table (target, model, every state): $env:RUN_URL") | Set-Content body.txt
+          # Blocked is reserved for "the loop cannot go on without you" - a missing key, or a
+          # run that confirmed nothing at all. Austin 2026-08-09: a failed row inside an
+          # otherwise good run is listed in `done`, not paged. Blocked is the only type allowed
+          # to wake anyone, and it stays that way by not firing for 5-of-6.
+          $needsHim = ($blocked.Count -gt 0) -or ($totDone -eq 0)
+          $type  = if ($needsHim) { 'blocked' } else { 'done' }
+          $title = if ($blocked.Count) { "Loop blocked - $($blocked.Count) fix(es) needed" }
+                   elseif ($totDone -eq 0) { "Loop confirmed nothing - 0/$totAll" }
+                   else { "Loop done - $totDone/$totAll" }
+          $body | Set-Content body.txt
 
-          # A second button on the notification, not more text in it - Austin 2026-08-06:
-          # findings only living in long .md files nobody opens is as bad as no findings.
-          # The vault doc (if refreshed) is the readable one; otherwise the first spec's
-          # merged/opened PR. ntfy Actions joins with ';', so this rides alongside "Open run".
-          $resultUrl = if ($env:DOC_URL) { $env:DOC_URL } else { ($all | Where-Object { $_.resultUrl } | Select-Object -First 1).resultUrl }
-          if ($resultUrl) { $env:EXTRA_ACTIONS = "view, Results, $resultUrl" }
+          # A second button on the notification, not more text in it. The vault note is the
+          # readable one; otherwise the first spec's PR.
+          $resultUrl = if ($env:VAULT_URL) { $env:VAULT_URL }
+                       else { ($all | Where-Object { $_.resultUrl } | Select-Object -First 1).resultUrl }
+          if ($resultUrl) { $env:EXTRA_ACTIONS = "view, Summary, $resultUrl" }
           bash ci/notify.sh $type $title body.txt
-

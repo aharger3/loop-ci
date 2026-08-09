@@ -128,6 +128,63 @@ for ($t = 0; $t -lt $taskStarts.Count; $t++) {
   $dwm = [regex]::Match($body, $dwPat)
   $doneWhen = if ($dwm.Success) { ((Clean $dwm.Groups[1].Value) -replace '\s+', ' ').Trim() } else { '' }
 
+  # verify: is a LITERAL SHELL COMMAND, and it is the only thing that decides whether a row is
+  # done. It deliberately does NOT go through Clean(): Clean strips backticks and asterisks,
+  # which would corrupt a glob (`research/*.json`), a bold-looking regex, or a quoted string.
+  #
+  # Why this field exists at all: until 2026-08-09 a row was "done" because the model wrote
+  # {"done": true} into a sentinel file. Nothing ever ran the check. omen-3.7 reported 0/9 with
+  # 40 changed files in its PR, and omen-3.8 run 31318238961 reported 0/2 while T0 had written
+  # both of its artifacts to disk - the agent doing the work correctly diagnosed it itself:
+  # "run-spec.ps1 has no independent done-when checker". An LLM grading its own homework is not
+  # a test. `done-when:` stays as prose FOR THE MODEL; `verify:` is the exit code for the runner.
+  #
+  # Two dialects, both legal:
+  #   - **verify:** `python research/regression_gate.py`     one line, backticks optional
+  #   - **verify:**                                          then a fenced block, for 2+ commands
+  #     ```bash
+  #     python a.py
+  #     test -s research/out.json
+  #     ```
+  # The label must be a LIST BULLET or bold - `- verify:`, `- **verify:**`, `**verify:**`. A
+  # bare `verify:` at the start of a wrapped prose line is not a field, and treating it as one
+  # installs a check made of English that can only ever fail. Caught by the self-check spec,
+  # whose T4 prose says "no verify: at all" and was silently parsed as the command.
+  $vPat  = '(?im)^[ \t]*(?:[-*][ \t]+\*{0,2}|\*\*)verify\*{0,2}[ \t]*:[ \t]*\*{0,2}[ \t]*(.*?)[ \t]*$'
+  $vm    = [regex]::Match($body, $vPat)
+  $verify = ''
+  if ($vm.Success) {
+    $verify = $vm.Groups[1].Value.Trim()
+    # One layer of inline backticks is markup, not part of the command.
+    if ($verify -match '^`(.+)`$') { $verify = $Matches[1] }
+    # Empty value after the colon = the command is in the fenced block that follows.
+    if (-not $verify) {
+      $vLine = ($body.Substring(0, $vm.Index) -split "`n").Count - 1
+      $bl = $body -split "`n"
+      $inFence = $false; $collected = @()
+      for ($k = $vLine + 1; $k -lt $bl.Count; $k++) {
+        $ln = $bl[$k]
+        if ($ln -match '^\s*```') {
+          if ($inFence) { break }
+          $inFence = $true; continue
+        }
+        # A non-blank, non-fence line before the fence opens means there is no fenced block.
+        if (-not $inFence -and $ln.Trim()) { break }
+        if ($inFence) { $collected += $ln }
+      }
+      # DEDENT, never Trim() each line. The fence sits indented under its bullet, so a common
+      # prefix has to come off - but trimming every line individually would flatten the inside
+      # of a heredoc or a python block and turn a working check into an IndentationError.
+      $real = @($collected | Where-Object { $_.Trim() })
+      if ($real.Count) {
+        $indent = ($real | ForEach-Object { [regex]::Match($_, '^[ \t]*').Value.Length } |
+                   Measure-Object -Minimum).Minimum
+        $verify = (($collected | ForEach-Object {
+                     if ($_.Length -ge $indent) { $_.Substring($indent) } else { '' } }) -join "`n").Trim()
+      }
+    }
+  }
+
   $deps = @()
   if ($depsRaw) {
     # "L0.5 (tunnel), L0.6 (ntfy)" -> drop the parentheticals before splitting.
@@ -143,10 +200,21 @@ for ($t = 0; $t -lt $taskStarts.Count; $t++) {
 
   # Prompt = the whole body (KILL lines included - they are instructions), minus the
   # metadata line, so the agent still sees the prose that describes the work.
-  $prompt = ($body -replace '(?im)^\s*(?:[-*]\s+)?\*{0,2}(model|effort|files|depends-on)\*{0,2}\s*:[^\r\n]*\r?\n', '').Trim()
+  # verify: is stripped too - the runner injects it into the prompt itself, framed as "this
+  # exact command decides your row", which reads very differently from one more bullet.
+  $prompt = ($body -replace '(?im)^\s*(?:[-*]\s+)?\*{0,2}(model|effort|files|depends-on|verify)\*{0,2}\s*:[^\r\n]*\r?\n', '').Trim()
   if (-not $prompt) { $prompt = $m.Groups['title'].Value.Trim() }
 
   if (-not $doneWhen) { Fail "task $id has no 'done-when:' line - refusing to run a row with no success test" }
+
+  # A row already marked [x] is never executed, so it does not need a check. Everything else
+  # does: a row nobody can write a command for is a row nobody can confirm, and that is the
+  # entire bug this contract closes. Fail at parse time, for zero tokens, not after the spend.
+  if (-not $isDone -and -not $verify) {
+    Fail ("task $id has no 'verify:' line. The runner confirms a row by running a command and " +
+          "reading its exit code - it no longer takes the model's word for it. Add one line: " +
+          '- **verify:** `<shell command that exits 0 only when this row is really done>`')
+  }
 
   $tasks += [ordered]@{
     id        = $id
@@ -155,6 +223,7 @@ for ($t = 0; $t -lt $taskStarts.Count; $t++) {
     files     = $files
     prompt    = ($m.Groups['title'].Value.Trim() + "`n" + $prompt)
     doneWhen  = $doneWhen
+    verify    = $verify
     dependsOn = $deps
     done      = [bool]$isDone
   }

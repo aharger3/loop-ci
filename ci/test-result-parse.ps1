@@ -38,3 +38,32 @@ Check 'json array wrapper' '[{"done": true, "resultLine": "final"}]' $true
 
 if ($fails) { Write-Host "$fails FAILED"; exit 1 }
 Write-Host 'all result-parse checks pass'
+
+# --- Read-TaskReport ------------------------------------------------------------------------
+# Deliberately the MIRROR IMAGE of the checks above. Read-TaskResult must reject anything it is
+# not certain about, because it used to decide a row's fate. Read-TaskReport must salvage
+# anything it can, because since 2026-08-09 it only carries commentary - and a dropped question
+# is a question Austin never gets asked.
+Write-Host ''
+function CheckReport($name, $json, $line, $nQ) {
+  $r = Read-TaskReport $json
+  $gotQ = @($r.questions).Count
+  if ("$($r.resultLine)" -ne "$line" -or $gotQ -ne $nQ) {
+    Write-Host "FAIL $name : expected line [$line] q=$nQ, got [$($r.resultLine)] q=$gotQ"
+    $script:fails++
+  } else { Write-Host "ok   $name -> '$($r.resultLine)' q=$gotQ" }
+}
+
+CheckReport 'normal'        '{"resultLine":"did x","questions":["a","b"],"ideas":[],"tasks":[]}' 'did x' 2
+CheckReport 'no lists'      '{"resultLine":"did x"}'                                             'did x' 0
+CheckReport 'string q'      '{"resultLine":"x","questions":"just one"}'                          'x'     1
+CheckReport 'summary alias' '{"summary":"used the wrong key"}'                                   'used the wrong key' 0
+CheckReport 'array wrapper' '[{"resultLine":"last one","questions":["q"]}]'                      'last one' 1
+# The shapes that used to FAIL A ROW now cost nothing but a blank line in the notification.
+CheckReport 'legacy done'   '{"done":true,"resultLine":"still readable"}'                        'still readable' 0
+CheckReport 'not json'      'Task complete!'                                                     ''      0
+CheckReport 'empty'         ''                                                                   ''      0
+CheckReport 'blank q drop'  '{"resultLine":"x","questions":["","  ","real"]}'                    'x'     1
+
+if ($fails) { Write-Host "$fails FAILED"; exit 1 }
+Write-Host 'all result-parse + result-report checks pass'
