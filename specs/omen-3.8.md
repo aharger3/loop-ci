@@ -151,3 +151,4 @@ anything — recommend only).
 
 - **done-when:** `research/v38_verdict.md` exists and states a final S-recall number, a final
   any-signal recall number, and the regression gate's final exit code (must be 0).
+
