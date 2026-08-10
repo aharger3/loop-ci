@@ -14,7 +14,7 @@ number is omen-4.1, computed once on a corrected base instead of twice on a wron
 
 <!-- `doc:` points at Projects/OMEN.md — confirmed on main; this run's summary writes there. -->
 
-### T1 -- merge the 29-mark regrade into the corpus
+### [x] T1 -- merge the 29-mark regrade into the corpus
 - model: deepseek
 
 Austin re-graded all 29 marks from the `no_break_retest` FSM buckets (`seek_retest`,
@@ -84,7 +84,7 @@ print("OK", len(rows), "rows,", len(regrades), "regrades verified")
 PY
   ```
 
-### T2 -- fix the no_break_retest taxonomy short-circuit
+### [x] T2 -- fix the no_break_retest taxonomy short-circuit
 - model: glm
 
 `research/miss_autopsy.py:120` returns the reason `no_break_retest` the instant
@@ -118,7 +118,7 @@ print('OK')
   python -m pytest tests/ -k miss_autopsy -q || python research/miss_autopsy.py --smoke
   ```
 
-### T3 -- add SPCX and widen the archive date range
+### [x] T3 -- add SPCX and widen the archive date range
 - model: deepseek
 
 Two jobs, one ingestion path.
@@ -159,7 +159,7 @@ print('OK', m.group(1), 'symbol-days added')
 "
   ```
 
-### T4 -- merge the 35-card blind batch
+### [x] T4 -- merge the 35-card blind batch
 - model: deepseek
 - depends-on: T1
 
@@ -257,7 +257,7 @@ print("OK", len(rows), "rows, 35 batch_04 ids verified")
 PY
   ```
 
-### T5 -- mine the 14 marks Austin named inside his own notes
+### [x] T5 -- mine the 14 marks Austin named inside his own notes
 - model: deepseek
 - depends-on: T4
 
@@ -344,7 +344,7 @@ print("OK v6 =", len(v6), "rows, 14 derived, 3 held back")
 PY
   ```
 
-### T6 -- enforce no-repeat entries in the engine
+### [x] T6 -- enforce no-repeat entries in the engine
 - model: glm
 
 Austin settled this on 2026-08-09 and it is written in `Projects/OMEN.md` but was never
@@ -432,7 +432,7 @@ unchanged and zero added/dropped — include that as a self-test in the script
   grep -q "trades_regraded:" research/t7_churn.md
   ```
 
-### T8 -- find the 84% re-entry candidates the card deck can never show
+### [x] T8 -- find the 84% re-entry candidates the card deck can never show
 - model: glm
 - depends-on: T5
 
