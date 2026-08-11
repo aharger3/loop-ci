@@ -604,6 +604,15 @@ positive; add these as clauses in his words, with evidence ids:
     and reported, never required. Evidence: `PLTR_2025-12-10_45_52` ("perfect S entry orc
     BR confluence"), `NVDA_2024-12-16_14` ("OCR+BR confluence").
 
+11. **The remaining clauses pulled from his notes.** Write each as its own short line so
+    a later version can implement it: **wick-touch is a hard filter for break-and-retest
+    too**, not only for the one candle rule (`PLTR_2024-10-23_10`, "wick not touching a
+    level"); a **pre-signal wick raises confidence** (`IWM_2024-04-03_13`, "large wick
+    before candle entry gives confidence even though it's not the absolute strongest green
+    candle"); a **trendline break wants a second confirmation candle with strength**
+    (`ORCL_2025-03-28_12`). Mark these three explicitly as **written but not yet
+    implemented** so nobody mistakes the paragraph for shipped behaviour.
+
 Finally, add a **reclaim-speed** line under the 84% section: a reclaim that takes a long
 time is not the same trade as a fast one and demotes — Austin graded `AMD_2026-05-14_67`
 an A for being "late + slow to develop" despite the rulebook calling a reclaim an
@@ -617,7 +626,7 @@ automatic S.
   python -c "
   s=open('Trading-Bot-Rulesets.md').read()
   low=s.lower()
-  need=('closes beyond the stop','close, except','09:30','session extreme','2 attempts','displacement','consolidation','in-between mesh','pivot structure','s+','confluence','reclaim speed')
+  need=('closes beyond the stop','close, except','09:30','session extreme','2 attempts','displacement','consolidation','in-between mesh','pivot structure','s+','confluence','reclaim speed','not yet implemented')
   miss=[k for k in need if k not in low]
   assert not miss, 'missing clause: %s' % miss
   ids=('MSTR_2024-09-26_11_14','AMD_2025-03-28_31','INTC_2025-02-27_72_153','CRM_2024-11-11_14','GOOGL_2026-01-20_67','MSFT_2025-03-20_28','AAPL_2024-10-28_162','AMZN_2025-07-17_34','PLTR_2025-12-10_45_52')
@@ -840,11 +849,25 @@ s_plus_pnl: <dollars>
 s_all_winrate: <pct>
 ```
 
-State plainly whether `s_plus_winrate` clears Austin's 55% target, whether `br_ocr_winrate`
-does, and whether the 84% book is additive or dilutive to `combined_pnl`. This is
-in-sample and single-split; say so in one sentence and do not present any of it as a
-forward-looking expectation. A prior walk-forward on a different engine version lost 6–10
-points going out of sample, so treat every number here as an upper bound.
+**Walk it forward in the same run.** Every number above is in-sample, and a prior
+walk-forward on a different engine version lost 6–10 points going out of sample — an
+in-sample-only report is how the last three versions produced numbers that did not survive
+contact. Split the archive by date at the 70th percentile of trading days: everything T11
+tuned (`SESSION_EXTREME_FRAC`, the `S_GATE` / `HTF_OPPOSITION_VETO` arms) is chosen on the
+first 70% only, then the last 30% is scored once, untouched. Report:
+
+```
+s_plus_winrate_is: <pct>
+s_plus_winrate_oos: <pct>
+br_ocr_winrate_is: <pct>
+br_ocr_winrate_oos: <pct>
+oos_days: <n>
+```
+
+State plainly whether `s_plus_winrate_oos` clears Austin's 55% target — **that is the only
+win-rate number in this spec that means anything**, and if it comes in under, say so
+without softening. Also state whether the 84% book is additive or dilutive to
+`combined_pnl`.
 
 - **done-when:** the report exists with all nine lines above plus a per-pool table, and
   the three books' trade counts add up (`br_ocr_trades + rule84_trades == combined_trades`).
@@ -854,9 +877,10 @@ points going out of sample, so treat every number here as an upper bound.
   import re
   r=open('research/t8_split_backtest.md').read()
   g=lambda k: re.search('^'+k+r':\s*\\\$?(-?[0-9.]+)', r, re.M)
-  need=['br_ocr_trades','br_ocr_winrate','br_ocr_pnl','rule84_trades','rule84_winrate','rule84_pnl','combined_trades','combined_winrate','combined_pnl','s_plus_trades','s_plus_winrate','s_plus_pnl','s_all_winrate']
+  need=['br_ocr_trades','br_ocr_winrate','br_ocr_pnl','rule84_trades','rule84_winrate','rule84_pnl','combined_trades','combined_winrate','combined_pnl','s_plus_trades','s_plus_winrate','s_plus_pnl','s_all_winrate','s_plus_winrate_is','s_plus_winrate_oos','br_ocr_winrate_is','br_ocr_winrate_oos','oos_days']
   miss=[k for k in need if not g(k)]
   assert not miss, f'missing: {miss}'
+  assert int(float(g('oos_days').group(1)))>=60, 'out-of-sample window too small to mean anything'
   a,b,c=(int(float(g(k).group(1))) for k in ('br_ocr_trades','rule84_trades','combined_trades'))
   assert a+b==c, '%d+%d != %d' % (a,b,c)
   assert a>0, 'BR/OCR book is empty'
