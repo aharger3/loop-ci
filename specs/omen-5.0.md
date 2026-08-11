@@ -61,6 +61,38 @@ now written each of them many times; none is in the code.
 - Backtest reports BR/OCR **separately** from the 84% rule.
 - The 37 out-of-window cards are dropped, not regraded.
 
+**Settled about the S rule itself, 2026-08-11:**
+
+The S rule as written has **no positive quality clause**. S = clause 1 ("is it one of
+three setups?") plus three *negative* filters. Nothing asks whether the setup is any
+good — the detector's own A+/A/B/C quality score is deliberately never read
+(`signal_runner.py:290-296`). BR fired 74,805 times across the archive; Austin takes 1–3
+S a day. That inversion — S being the default for a detected setup rather than something
+earned — is the reason S-precision is 0–5%, and no threshold tuning fixes it.
+
+- **Pivot structure is a level type the engine has never had.** Austin trades off swing
+  highs/lows and pivot structures, not only the six levels the engine knows (OR high/low,
+  PDH/PDL, PMH/PML). His notes say it directly: "pivot structure break > level break",
+  "dont see any levels, unless some were forgot to be marked", "no clean break it just
+  respect pivot structures". **This is the biggest single gap and T10 builds it.**
+- **S splits into two reported tiers, one grading scale.** The top **1–3 per day**
+  universe-wide are `S+` — Austin's own words: "the top s trades which usually happen
+  earlier in the day". The rest stay `S` and are **not discarded** — "i dont want that
+  discarded, just put it in two separate tiers, not separate grading scale". Both are S
+  for grading and corpus purposes; the split is a reporting rank, not a new tier letter.
+- **Confluence is a bonus, not a requirement.** A bar where two of the three setups fire
+  gets flagged and reported so we can measure whether his S marks cluster there. A lone
+  clean setup can still be S.
+- **"In-between mesh" is a hard S-veto.** His 2026-07-06 note — "middle of a bunch of
+  levels, probability goes down significantly" — is in the rulebook as a C-condition and
+  is implemented **nowhere in code**. It becomes a veto, not a demotion.
+- **Displacement gets a written definition and is required for BR.** Cited in 18 of his
+  notes as the S/A/C swing factor; appears in zero rule paragraphs. `BNR_DISPLACEMENT_GATE`
+  has sat at `False` while the rulebook claims the break needs "volume/momentum".
+- **Too much consolidation, or too long between break and retest, demotes BR and OCR** —
+  Austin's own clause from 2026-08-10. Rules 7 and 10 are fully coded and dormant
+  (`RULE_710_ENABLED = False`); they are exactly this rule.
+
 
 ### T1 -- Consolidate every mark Austin has ever written into austin_marks_v7.jsonl
 - model: deepseek
@@ -505,8 +537,8 @@ Write `research/t6_archive.md` with a per-symbol line
   ```
 
 
-### T7 -- Write the four corrected rules into Trading-Bot-Rulesets.md
-- model: deepseek
+### T7 -- Write the corrected rules into Trading-Bot-Rulesets.md
+- model: glm
 
 Austin repeats these in his notes because they are not written down anywhere. Add each
 as its own numbered clause in `Trading-Bot-Rulesets.md`, in his words, with the mark ids
@@ -534,25 +566,241 @@ that establish it. Do not paraphrase away the specifics.
 Also add a short **"the 84% rule takes 2 attempts, not 3"** line under the existing 84%
 section, citing `CRM_2024-11-11_14`.
 
-- **done-when:** all five clauses are in `Trading-Bot-Rulesets.md`, each naming at least
-  one mark id, and the file still parses as the same document (no sections deleted).
+Then rewrite the **"Austin's Tiers (S / A / C / X)"** section, because the S rule as
+written is the root problem. Today S = clause 1 plus three *negative* filters and nothing
+positive; add these as clauses in his words, with evidence ids:
+
+5. **Displacement.** Define it once, concretely, and require it for break-and-retest:
+   the break leg must show displacement — a decisive move off the level rather than a
+   drift — and a B&R without it can never be S. Give the definition in bars and range
+   terms so `BNR_DISPLACEMENT_GATE` implements exactly what the paragraph says, not an
+   interpretation of it. Evidence: `GOOGL_2026-01-20_67` ("way to Many break and retests
+   with no displacement"), `QQQ_2024-05-08_8`, `SPY_2024-07-11_44`, `TSLA_2024-12-03_17`,
+   `NVDA_2024-11-18_10`.
+6. **Too much consolidation, or too slow a retest, demotes.** Austin, 2026-08-10: OCR and
+   BR with too much consolidation, or too long between the break and the retest of the
+   level or one candle, are subject to demotion. Rules 7 (retest speed) and 10 (left-side
+   pivot count) already state this numerically — cite them here so the paragraph and the
+   code are the same rule. Evidence: `MSFT_2025-03-20_28` ("too much consolidation before
+   entry"), `NVDA_2024-11-13_17` ("too choppy and taking too long"), `QQQ_2024-07-24_23`,
+   `MSTR_2024-12-17_89` ("chop").
+7. **In-between mesh is a hard veto, not a demotion.** Austin, 2026-07-06: "middle of a
+   bunch of levels, probability goes down significantly." Currently written in this
+   document as a C-condition and implemented nowhere. Evidence: `AAPL_2024-10-28_162`
+   ("tight and chop in-between channels"), `SPCX_2026-06-29_47` ("overextended and no
+   great entry presented itself").
+8. **Pivot structure is a level.** Swing highs and lows are levels Austin trades off, on
+   equal footing with OR high/low, PDH/PDL and PMH/PML, and a break of pivot structure
+   outranks a break of a named level. Evidence: `AMZN_2025-07-17_34` ("pivot-structure
+   break > level break"), `NVDA_2024-09-06_53` ("no clean break it just respect pivot
+   structures"), `TSLA_2024-12-03_17` ("break/retest of a 2-candle structure, not a large
+   pivot"), `NVDA_2025-11-28_14_22` ("raise the stop to the higher piece of the pivot
+   structure").
+9. **S+ and S.** All S signals stay S on one grading scale. The top **1–3 per day**
+   universe-wide are reported as `S+` — "the top s trades which usually happen earlier in
+   the day". The rest are still S and are **never discarded**. This is a reporting rank,
+   not a fifth tier letter.
+10. **Confluence is a bonus.** Two of the three setups firing on the same bar is recorded
+    and reported, never required. Evidence: `PLTR_2025-12-10_45_52` ("perfect S entry orc
+    BR confluence"), `NVDA_2024-12-16_14` ("OCR+BR confluence").
+
+Finally, add a **reclaim-speed** line under the 84% section: a reclaim that takes a long
+time is not the same trade as a fast one and demotes — Austin graded `AMD_2026-05-14_67`
+an A for being "late + slow to develop" despite the rulebook calling a reclaim an
+automatic S.
+
+- **done-when:** all five original clauses plus clauses 5–10 and the reclaim-speed line
+  are in `Trading-Bot-Rulesets.md`, each naming at least one mark id, and the file still
+  parses as the same document (no sections deleted).
 - **verify:**
   ```bash
   python -c "
   s=open('Trading-Bot-Rulesets.md').read()
   low=s.lower()
-  miss=[k for k in ('closes beyond the stop','close, except','09:30','session extreme','2 attempts') if k not in low]
+  need=('closes beyond the stop','close, except','09:30','session extreme','2 attempts','displacement','consolidation','in-between mesh','pivot structure','s+','confluence','reclaim speed')
+  miss=[k for k in need if k not in low]
   assert not miss, 'missing clause: %s' % miss
-  noid=[m for m in ('MSTR_2024-09-26_11_14','AMD_2025-03-28_31','INTC_2025-02-27_72_153','CRM_2024-11-11_14') if m not in s]
+  ids=('MSTR_2024-09-26_11_14','AMD_2025-03-28_31','INTC_2025-02-27_72_153','CRM_2024-11-11_14','GOOGL_2026-01-20_67','MSFT_2025-03-20_28','AAPL_2024-10-28_162','AMZN_2025-07-17_34','PLTR_2025-12-10_45_52')
+  noid=[m for m in ids if m not in s]
   assert not noid, 'missing evidence id: %s' % noid
   print('rulebook OK')
   "
   ```
 
 
+### T10 -- Pivot structure as a first-class level
+- model: opus
+
+The engine knows exactly six levels — OR high, OR low, PDH, PDL, PMH, PML — plus order
+blocks and the session HOD/LOD. Austin confirmed 2026-08-11 that his eye also trades
+**pivot structure**: swing highs and lows built from price itself. His notes say it
+outright and repeatedly: *"pivot-structure break > level break"* (`AMZN_2025-07-17_34`),
+*"no clean break it just respect pivot structures so maybe higher timeframe thesis"*
+(`NVDA_2024-09-06_53`), *"break/retest of a 2-candle structure, not a large pivot"*
+(`TSLA_2024-12-03_17`), *"I would raise the stop after the second time to the higher
+piece of the pivot structure"* (`NVDA_2025-11-28_14_22`), *"dont see any levels, unless
+some were forgot to be marked"* (`SPY_2024-06-11_23`).
+
+**If this is real, it is the ceiling on everything else** — a detector blind to the level
+a trade is keyed to cannot be filtered into agreement, only filtered into silence.
+
+Add a `pivot_levels(candles, ...)` source in `signal_runner.py` alongside the existing
+level builders. A pivot high is a bar whose high exceeds the highs of the `PIVOT_STRENGTH`
+bars either side of it; mirror for a pivot low. Expose `PIVOT_STRENGTH` as an
+env-overridable constant (start at 2 — a 2-bar swing on each side, which is the smallest
+structure Austin's "2-candle structure" note treats as real) and emit each pivot as a
+level with `stop_level_name` of the form `pivot high @HH:MM` / `pivot low @HH:MM` so
+`idea_key()` and `_targets_session_extreme()` keep working unchanged.
+
+Only pivots formed **before** the signal bar may be used — a pivot needs
+`PIVOT_STRENGTH` bars to its right to exist, so a pivot is only usable from
+`pivot_index + PIVOT_STRENGTH + 1` onward. Getting this wrong is lookahead and would
+make every downstream number a fiction; assert it in the tests.
+
+Feed pivot levels into break-and-retest detection exactly as named levels are fed today.
+Austin's *"pivot-structure break > level break"* means a B&R off a pivot ranks **above**
+one off a named level when both are present on the same bar — record that ordering in the
+signal so T11 can use it, do not silently prefer one.
+
+Then measure: replay detection over `research/austin_marks_v7.jsonl` with pivots off and
+on, and write `research/t10_pivot_levels.md` with these exact lines plus a table of which
+previously-unexplained Austin S marks a pivot level now accounts for:
+
+```
+s_marks_total: <n>
+s_explained_before: <n>
+s_explained_after: <n>
+pivot_fires_per_day: <float>
+```
+
+`s_explained` = an Austin S mark where the engine now emits any signal within 2 bars of
+his marked entry. If `s_explained_after` is not greater than `s_explained_before`, say so
+plainly in the report — a negative result here is a real finding and must not be dressed up.
+
+- **done-when:** `pivot_levels` exists and is env-tunable, pivots are provably not visible
+  before they complete, break-and-retest consumes them, and the before/after report is
+  written with all four lines.
+- **verify:**
+  ```bash
+  python -m py_compile signal_runner.py
+  python test_austin_tier.py 2>&1 | tee /tmp/t10_tests.txt
+  test $? -eq 0
+  ! grep -q 'FAIL\|Traceback' /tmp/t10_tests.txt
+  python -c "
+  import signal_runner as sr
+  assert callable(getattr(sr,'pivot_levels',None)), 'pivot_levels missing'
+  assert hasattr(sr,'PIVOT_STRENGTH'), 'PIVOT_STRENGTH missing'
+  from collections import namedtuple
+  C=namedtuple('C','timestamp open high low close volume')
+  bars=[C('09:%02d:00'%(30+i),1,h,h-1,h,100) for i,h in enumerate([5,6,9,6,5,4,3,4,5,8,5,4,3])]
+  lv=sr.pivot_levels(bars)
+  assert lv, 'no pivots found in a series with an obvious swing high'
+  idx=[getattr(l,'index',l.get('index') if isinstance(l,dict) else None) for l in lv]
+  assert all(i is not None for i in idx), 'pivot levels must carry the bar index they formed on'
+  print('pivot_levels OK,', len(lv), 'pivots')
+  "
+  python -c "
+  import re
+  r=open('research/t10_pivot_levels.md').read()
+  need=['s_marks_total','s_explained_before','s_explained_after','pivot_fires_per_day']
+  miss=[k for k in need if not re.search('^'+k+r':\s*[0-9.]+', r, re.M)]
+  assert not miss, 'missing: %s' % miss
+  print('pivot report OK')
+  "
+  ```
+
+
+### T11 -- Give S a quality bar it has to earn
+- model: opus
+- depends-on: T3, T7, T10
+
+Today `compute_austin_tier` grants S to any bar where clause 1 holds (the setup is one of
+the three) and three *negative* filters do not fire. There is no positive quality test
+anywhere, which is why the engine emits 74,805 break-and-retests while Austin takes 1–3 S
+a day. This row inverts that: S must earn its way past quality clauses.
+
+**(a) Arm the two dormant quality levers.** `BNR_DISPLACEMENT_GATE` (line 140) and
+`RULE_710_ENABLED` (line 280) are fully coded, default `False`, and are exactly the
+displacement and retest-speed/pivot-count rules Austin has been writing in his notes.
+Default both to **on**. Make the displacement gate implement the definition T7 writes into
+`Trading-Bot-Rulesets.md` — read that paragraph, do not invent a threshold.
+
+**(b) A/B the two levers that are fitted or unsettled, do not arm them blind.** `S_GATE`
+(line 212) was fit to a 50th percentile of X-marks and never A/B'd; `HTF_OPPOSITION_VETO`
+is hard-coded to `"hard"` while three of Austin's notes say a good fill should override an
+opposed higher timeframe. Measure both arms of each against
+`research/austin_marks_v7.jsonl` and report; leave the defaults as they are unless the
+measurement is decisive, and say which way it went.
+
+**(c) In-between mesh becomes a hard S-veto.** Austin, 2026-07-06: "middle of a bunch of
+levels, probability goes down significantly", and 2026-08-11 he made it a veto rather than
+a demotion. An entry with another known level (including the new pivot levels from T10)
+sitting between it and its 2R target, with no clear room, cannot be S. `LEVEL_BLOCK_CAP`
+already computes something close to this for the engine *grade* — reuse that computation,
+do not duplicate it, and route it into `compute_austin_tier` where it currently has no
+effect.
+
+**(d) Confluence flag.** When two of the three setups fire on the same symbol, direction
+and bar, set `confluence: true` on the signal and record which pair. Reported, never
+required — a lone clean setup is still S.
+
+**(e) S+ ranking.** All S signals stay S; this is a rank, not a new tier letter, and
+nothing is discarded. Add `s_rank` to each S signal: the top **1–3 per day universe-wide**
+are `"S+"`, everything else `"S"`. Rank earliest-first — Austin: "the top s trades which
+usually happen earlier in the day" — breaking ties by engine grade then by confluence.
+Cap at 3 per calendar day across all symbols, env-overridable as `S_PLUS_PER_DAY`.
+
+Then write `research/t11_s_quality.md` with these exact lines:
+
+```
+s_fires_per_day_before: <float>
+s_fires_per_day_after: <float>
+s_plus_per_day: <float>
+s_precision_before: <pct>
+s_precision_after: <pct>
+mesh_vetoed: <n>
+confluence_bars: <n>
+```
+
+`s_precision` = share of the engine's S bars that Austin graded S in v7. The target rate
+Austin gave is **1–3 S+ per day across the 15 symbols**; if `s_fires_per_day_after` is
+still in the hundreds, say so plainly — that is the finding, not a failure to hide.
+
+- **done-when:** both quality levers default on, mesh vetoes S, confluence and `s_rank`
+  are set on signals, `s_plus_per_day` is at most 3, and the report carries all seven lines.
+- **verify:**
+  ```bash
+  python -m py_compile signal_runner.py
+  python test_austin_tier.py 2>&1 | tee /tmp/t11_tests.txt
+  test $? -eq 0
+  ! grep -q 'FAIL\|Traceback' /tmp/t11_tests.txt
+  python -c "
+  import signal_runner as sr
+  assert sr.BNR_DISPLACEMENT_GATE is True, 'displacement gate not armed'
+  assert sr.RULE_710_ENABLED is True, 'rule 7/10 not armed'
+  assert hasattr(sr,'S_PLUS_PER_DAY'), 'S_PLUS_PER_DAY missing'
+  assert sr.S_PLUS_PER_DAY <= 3, sr.S_PLUS_PER_DAY
+  body=open('signal_runner.py').read()
+  for k in ('mesh','confluence','s_rank'):
+      assert k in body, 'missing '+k
+  print('S quality bar OK')
+  "
+  python -c "
+  import re
+  r=open('research/t11_s_quality.md').read()
+  need=['s_fires_per_day_before','s_fires_per_day_after','s_plus_per_day','s_precision_before','s_precision_after','mesh_vetoed','confluence_bars']
+  miss=[k for k in need if not re.search('^'+k+r':\s*[0-9.]+', r, re.M)]
+  assert not miss, 'missing: %s' % miss
+  sp=float(re.search(r'^s_plus_per_day:\s*([0-9.]+)', r, re.M).group(1))
+  assert sp<=3.0, 'S+ rate %s exceeds the 1-3/day target' % sp
+  print('S quality report OK')
+  "
+  ```
+
+
 ### T8 -- Backtest BR/OCR and the 84% rule separately, per pool
 - model: glm
-- depends-on: T1, T3, T4, T5
+- depends-on: T1, T3, T4, T5, T10, T11
 
 Austin: "lets seperate OCR BR from 84 percent rule in backtesting because those two seem
 closer to understood." Today the backtest reports one blended number, so a change that
@@ -581,8 +829,22 @@ combined_winrate: <pct>
 combined_pnl: <dollars>
 ```
 
-State plainly whether `br_ocr_winrate` clears Austin's 55% target, and whether the
-84% book is additive or dilutive to `combined_pnl`. This is in-sample; say so.
+On top of that, report the **S+ book on its own** — the 1–3/day top-ranked S signals T11
+produces — because that is the book Austin would actually trade. Same four numbers, plus
+these exact lines:
+
+```
+s_plus_trades: <n>
+s_plus_winrate: <pct>
+s_plus_pnl: <dollars>
+s_all_winrate: <pct>
+```
+
+State plainly whether `s_plus_winrate` clears Austin's 55% target, whether `br_ocr_winrate`
+does, and whether the 84% book is additive or dilutive to `combined_pnl`. This is
+in-sample and single-split; say so in one sentence and do not present any of it as a
+forward-looking expectation. A prior walk-forward on a different engine version lost 6–10
+points going out of sample, so treat every number here as an upper bound.
 
 - **done-when:** the report exists with all nine lines above plus a per-pool table, and
   the three books' trade counts add up (`br_ocr_trades + rule84_trades == combined_trades`).
@@ -592,7 +854,7 @@ State plainly whether `br_ocr_winrate` clears Austin's 55% target, and whether t
   import re
   r=open('research/t8_split_backtest.md').read()
   g=lambda k: re.search('^'+k+r':\s*\\\$?(-?[0-9.]+)', r, re.M)
-  need=['br_ocr_trades','br_ocr_winrate','br_ocr_pnl','rule84_trades','rule84_winrate','rule84_pnl','combined_trades','combined_winrate','combined_pnl']
+  need=['br_ocr_trades','br_ocr_winrate','br_ocr_pnl','rule84_trades','rule84_winrate','rule84_pnl','combined_trades','combined_winrate','combined_pnl','s_plus_trades','s_plus_winrate','s_plus_pnl','s_all_winrate']
   miss=[k for k in need if not g(k)]
   assert not miss, f'missing: {miss}'
   a,b,c=(int(float(g(k).group(1))) for k in ('br_ocr_trades','rule84_trades','combined_trades'))
@@ -631,7 +893,11 @@ rule84_match: <pct>
 rule84_n: <n>
 ```
 
-plus, for each setup, the top disagreement modes ranked by count — engine fired where
+plus the same three for the **S+ subset only**, as `br_match_splus:` / `ocr_match_splus:`
+/ `rule84_match_splus:` — Austin cares most about the S rules, so the S+ number is the
+headline and the all-S number is context.
+
+Then, for each setup, the top disagreement modes ranked by count — engine fired where
 Austin said X, engine silent where Austin said S, tier off by one — with example ids.
 Also report `before` numbers from the pre-T3/T4 engine on the same rows so the delta from
 this version is visible, as `br_match_before:` / `ocr_match_before:` / `rule84_match_before:`.
@@ -649,7 +915,7 @@ omen-5.1.
   import re
   r=open('research/t9_eye_match.md').read()
   g=lambda k: re.search('^'+k+r':\s*(-?[0-9.]+)', r, re.M)
-  need=['br_match','br_n','ocr_match','ocr_n','rule84_match','rule84_n','br_match_before','ocr_match_before','rule84_match_before']
+  need=['br_match','br_n','ocr_match','ocr_n','rule84_match','rule84_n','br_match_before','ocr_match_before','rule84_match_before','br_match_splus','ocr_match_splus','rule84_match_splus']
   miss=[k for k in need if not g(k)]
   assert not miss, 'missing: %s' % miss
   small=[k for k in ('br_n','ocr_n','rule84_n') if int(float(g(k).group(1)))<15]
