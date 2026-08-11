@@ -83,16 +83,19 @@ function Tier($model) {
 # Each tier is (env block, model id, which secret must exist, how to fix it if missing).
 # `resume` is the literal text of the BLOCKED notification - the exact steps, not a hint.
 $TIERS = @{
-  # Pay-per-token console key. oauth=$true + CLAUDE_CODE_OAUTH_TOKEN (a `claude setup-token`
-  # one-year CI token) bills the Max subscription instead; flip both fields to switch back.
-  # That precedence matters: ANTHROPIC_API_KEY (#3) OUTRANKS CLAUDE_CODE_OAUTH_TOKEN (#5), so
-  # setting both silently bills the console key. The per-task clear below is what prevents it.
+  # Austin 2026-08-11: opus bills the MAX SUBSCRIPTION, not the console key.
+  # CLAUDE_CODE_OAUTH_TOKEN is a `claude setup-token` one-year CI token and draws the same pool
+  # as an interactive session, so an opus row costs quota instead of dollars. To go back to
+  # pay-per-token, set secret='ANTHROPIC_API_KEY' and oauth=$false.
+  # Precedence matters: ANTHROPIC_API_KEY (#3) OUTRANKS CLAUDE_CODE_OAUTH_TOKEN (#5), so with
+  # both present the console key silently wins and this switch does nothing. The per-task clear
+  # below (every key nulled before the tier's own is set) is the only reason that cannot happen.
   opus = @{
     model  = 'claude-opus-5'
-    secret = 'ANTHROPIC_API_KEY'
-    oauth  = $false
+    secret = 'CLAUDE_CODE_OAUTH_TOKEN'
+    oauth  = $true
     base   = ''                                     # native api.anthropic.com
-    resume = 'ANTHROPIC_API_KEY repo secret missing. Set it (pay-per-token, dollars not subscription quota). To go back to the Max subscription instead: run `claude setup-token`, set repo secret CLAUDE_CODE_OAUTH_TOKEN, and flip secret/oauth back on this block.'
+    resume = 'CLAUDE_CODE_OAUTH_TOKEN repo secret missing or expired. Regenerate with `claude setup-token` (one-year CI token, bills the Max subscription) and set the repo secret. To fall back to pay-per-token dollars instead: set secret=ANTHROPIC_API_KEY and oauth=$false on this block.'
   }
   # OpenRouter publishes an Anthropic-compatible endpoint (the "Anthropic Skin") at
   # https://openrouter.ai/api - note NO /v1, Claude Code appends /v1/messages itself. The usual

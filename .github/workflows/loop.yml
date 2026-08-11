@@ -197,6 +197,11 @@ jobs:
       - name: Execute
         shell: pwsh
         env:
+          # opus bills the Max SUBSCRIPTION through this token (Austin 2026-08-11), not
+          # pay-per-token dollars. ANTHROPIC_API_KEY stays passed only as the documented
+          # fallback: run-spec.ps1 nulls every key before each task and sets exactly the one its
+          # tier names, which is the only reason the console key cannot silently outrank this.
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           ANTHROPIC_API_KEY:  ${{ secrets.ANTHROPIC_API_KEY }}
           ZAI_API_KEY:        ${{ secrets.ZAI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
