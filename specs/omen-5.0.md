@@ -94,7 +94,7 @@ earned — is the reason S-precision is 0–5%, and no threshold tuning fixes it
   (`RULE_710_ENABLED = False`); they are exactly this rule.
 
 
-### T1 -- Consolidate every mark Austin has ever written into austin_marks_v7.jsonl
+### [x] T1 -- Consolidate every mark Austin has ever written into austin_marks_v7.jsonl
 - model: deepseek
 
 Austin's marks are scattered and two thirds of his written notes are not in the live
@@ -228,7 +228,7 @@ new, rows whose tier was overwritten, notes preserved. Include the line
   ```
 
 
-### T2 -- Extract the alternative entries Austin names inside his notes
+### [x] T2 -- Extract the alternative entries Austin names inside his notes
 - model: glm
 - depends-on: T1
 
@@ -475,7 +475,7 @@ pnl_ladder_b: <dollars>
   ```
 
 
-### T5 -- Three tracked pools, MSTR out, ACHR/NFLX/ORCL in
+### [x] T5 -- Three tracked pools, MSTR out, ACHR/NFLX/ORCL in
 - model: deepseek
 
 The symbol lists disagree with each other and with Austin. `_t3_stage.py:20` has a
@@ -532,7 +532,7 @@ ACHR**, 507 for NFLX, 274 for ORCL — ACHR cannot be backtested until T6 lands.
   ```
 
 
-### T6 -- Archive 1-minute data for ACHR and top up ORCL
+### [x] T6 -- Archive 1-minute data for ACHR and top up ORCL
 - model: deepseek
 
 `data_archive/` has 0 days for ACHR and only 274 for ORCL, against 507+ for the rest of
@@ -557,7 +557,7 @@ Write `research/t6_archive.md` with a per-symbol line
   ```
 
 
-### T7 -- Write the corrected rules into Trading-Bot-Rulesets.md
+### [x] T7 -- Write the corrected rules into Trading-Bot-Rulesets.md
 - model: glm
 
 Austin repeats these in his notes because they are not written down anywhere. Add each
