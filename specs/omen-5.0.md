@@ -277,6 +277,7 @@ Then append the surviving rows to `research/austin_marks_v7.jsonl` and write
 
 ### T3 -- signal_runner.py: session window, intrabar fill, HOD/LOD veto, 84% caps
 - model: opus
+- depends-on: T1, T5, T6, T7
 
 Four mechanics, all in `signal_runner.py`. Each gets a module-level constant in the
 same style as the existing `BNR_DISPLACEMENT_GATE` / `S_GATE` block, env-overridable,
@@ -380,6 +381,7 @@ exemption), then extend the suite with a case for each of (a)–(d) above.
 
 ### T4 -- backtest_week.py: stop out on the CLOSE, and scratch a failed entry bar
 - model: opus
+- depends-on: T1, T5, T6, T7
 
 This is the largest correctness defect in the engine. `backtest_week.py:198` reads
 
@@ -946,6 +948,7 @@ recovered_s_marks: <n>
 
 ### T10 -- Pivot structure as a first-class level
 - model: opus
+- depends-on: T1, T5, T6, T7
 
 The engine knows exactly six levels — OR high, OR low, PDH, PDL, PMH, PML — plus order
 blocks and the session HOD/LOD. Austin confirmed 2026-08-11 that his eye also trades
