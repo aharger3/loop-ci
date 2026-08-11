@@ -624,14 +624,33 @@ positive; add these as clauses in his words, with evidence ids:
     and reported, never required. Evidence: `PLTR_2025-12-10_45_52` ("perfect S entry orc
     BR confluence"), `NVDA_2024-12-16_14` ("OCR+BR confluence").
 
-11. **The remaining clauses pulled from his notes.** Write each as its own short line so
-    a later version can implement it: **wick-touch is a hard filter for break-and-retest
-    too**, not only for the one candle rule (`PLTR_2024-10-23_10`, "wick not touching a
-    level"); a **pre-signal wick raises confidence** (`IWM_2024-04-03_13`, "large wick
-    before candle entry gives confidence even though it's not the absolute strongest green
-    candle"); a **trendline break wants a second confirmation candle with strength**
-    (`ORCL_2025-03-28_12`). Mark these three explicitly as **written but not yet
-    implemented** so nobody mistakes the paragraph for shipped behaviour.
+11. **The remaining clauses pulled from his notes and from the 2026-08-11 session sweep.**
+    Write each as its own short line so a later version can implement it, and mark the
+    whole group explicitly as **written but not yet implemented** so nobody mistakes the
+    paragraph for shipped behaviour:
+    - **Wick-touch is a hard filter for break-and-retest too**, not only for the one candle
+      rule (`PLTR_2024-10-23_10`, "wick not touching a level").
+    - **A pre-signal wick raises confidence** (`IWM_2024-04-03_13`, "large wick before
+      candle entry gives confidence even though it's not the absolute strongest green
+      candle").
+    - **A trendline break wants a second confirmation candle with strength**
+      (`ORCL_2025-03-28_12`).
+    - **Order-block stop selection.** Austin: *"you want the stop to always be somewhere in
+      the order block"*, and *"if you want a price target high of day and you can only go
+      so far for your stop loss to hit the 2-1 then you use the stop-loss to whatever is
+      the closest to that level, top of the order block."* The rulebook currently says only
+      "stop at the far side of the block" — his rule picks the stop **closest to the level
+      that still clears 2:1**, which is a different and better-defined rule.
+    - **Candle speed.** Austin: *"We need to figure out a system to detect how fast the
+      candle's moving... you have a clean break and retest and you're waiting on one more
+      candle to do what you want it to do and that puts you on high alert."* No velocity
+      feature exists anywhere in the engine.
+    - **One-candle-rule prior-visit veto.** Austin: *"i dont like one candle rule when
+      theres noise previously (the stock has already been there before) — you have to have
+      premarket or higher timeframe thesis to take middleman stuff like this."*
+    - **Entries come off retests, never breaks**: *"I never enter on breaks, I enter on
+      retests with strong price confirmation."* The break-and-retest detector already
+      implies this; state it so it cannot be loosened by accident.
 
 Finally, add a **reclaim-speed** line under the 84% section: a reclaim that takes a long
 time is not the same trade as a fast one and demotes — Austin graded `AMD_2026-05-14_67`
