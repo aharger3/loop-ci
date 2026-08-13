@@ -43,7 +43,7 @@ labels on days the engine fires **nothing**. That is what the day deck is for.
    grading pass, the order-block stop rule, and retiring the 84% rule are all deferred.
 
 
-### T1 -- Loosen the S bar to mesh-veto-only and delete the S+ tier
+### [x] T1 -- Loosen the S bar to mesh-veto-only and delete the S+ tier
 - model: glm
 
 In `signal_runner.py`, the S grade currently requires three clauses to pass: the
@@ -268,7 +268,7 @@ loss_is_upstream_of_gates: <yes|no>
   ```
 
 
-### T6 -- Two engine-blind day decks: TSLA 60 days, and QQQ/SPY 60 days
+### [x] T6 -- Two engine-blind day decks: TSLA 60 days, and QQQ/SPY 60 days
 - model: deepseek
 
 Every card deck so far has been **one card per engine fire**, which can only measure
@@ -331,7 +331,7 @@ contents must not appear anywhere in either HTML file.**
   ```
 
 
-### T7 -- Eye-match agreement scorer: the metric that replaces P&L for judging tiers
+### [x] T7 -- Eye-match agreement scorer: the metric that replaces P&L for judging tiers
 - model: glm
 - depends-on: T1
 
