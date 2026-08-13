@@ -1,0 +1,40 @@
+{
+  "_comment": [
+    "Recorded shapes of the two 2026-08-06 runs the watchdog exists to tell apart, trimmed to the",
+    "fields check() actually reads. Kept as a file so check.test.js needs no GH_TOKEN and no",
+    "network: the old test hit the live API, so it could not run in CI, and it would rot silently",
+    "once those runs age out of Actions retention.",
+    "",
+    "31119619358 - GitHub never allocated a runner. The alarm job was cancelled with ZERO steps,",
+    "so nothing notified and the phone stayed silent. This is the run the watchdog exists for.",
+    "31122686346 - the run itself was cancelled, but the alarm job SUCCEEDED because report had",
+    "already sent `done` for 16 finished rows. Paging here is the false alarm this replaces."
+  ],
+  "runs": [
+    {
+      "id": 31119619358,
+      "html_url": "https://github.com/aharger3/loop-ci/actions/runs/31119619358",
+      "display_title": "run: omen-3.4",
+      "conclusion": "cancelled",
+      "updated_at": "2026-08-06T04:12:00Z"
+    },
+    {
+      "id": 31122686346,
+      "html_url": "https://github.com/aharger3/loop-ci/actions/runs/31122686346",
+      "display_title": "run: omen-3.5 - 16 rows",
+      "conclusion": "cancelled",
+      "updated_at": "2026-08-06T09:40:00Z"
+    }
+  ],
+  "jobs": {
+    "31119619358": [
+      { "name": "plan",  "conclusion": "cancelled", "steps": [] },
+      { "name": "alarm", "conclusion": "cancelled", "steps": [] }
+    ],
+    "31122686346": [
+      { "name": "plan",   "conclusion": "success", "steps": [{ "name": "Set up job" }] },
+      { "name": "report", "conclusion": "failure", "steps": [{ "name": "Set up job" }] },
+      { "name": "alarm",  "conclusion": "success", "steps": [{ "name": "Set up job" }] }
+    ]
+  }
+}

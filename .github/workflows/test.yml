@@ -1,0 +1,115 @@
+name: Self-checks
+
+# The rig had 166 lines of good tests and nothing ran them. checkoff.ps1 and vault-sync.ps1 edit
+# Austin's spec files and his Obsidian notes by hand; parse-spec.ps1 and verify-core.ps1 decide
+# which rows run and whether they passed. A regression in any of them ships and is noticed three
+# nights later, in a vault note, by a human.
+#
+# Every check here is free: no model, no network, no secrets, no target repo. That is exactly
+# why it should be a gate rather than something to remember to run.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+# Unlike The Loop, this SHOULD collapse: only the newest commit on a branch is worth checking.
+# `ref_name`, not `ref`: a push gives refs/heads/x while a pull_request gives x, so keying on
+# `ref` puts the two events for the SAME commit in different groups and runs the suite twice.
+concurrency:
+  group: selfcheck-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # Each step runs even if an earlier one failed, so one push shows every breakage at once
+      # instead of one per re-run.
+      - name: parse-spec.ps1
+        if: always()
+        run: pwsh ci/test-parse.ps1
+
+      - name: result-parse.ps1
+        if: always()
+        run: pwsh ci/test-result-parse.ps1
+
+      - name: verify-core.ps1 (TopoOrder + Invoke-Verify)
+        if: always()
+        run: pwsh ci/test-verify-core.ps1
+
+      - name: checkoff.ps1 + vault-sync.ps1
+        if: always()
+        run: pwsh ci/test-pipeline.ps1
+
+      - name: notify.sh
+        if: always()
+        run: bash ci/test-notify.sh
+
+      - name: price-watch.py
+        if: always()
+        run: python3 ci/test-price-watch.py
+
+      - name: watchdog check()
+        if: always()
+        run: node watchdog/check.test.js
+
+      # The dry run is the end-to-end check: it exercises parse -> route -> order on the fixture
+      # spec without spending a token, and it is what catches a break that lives in the seams
+      # between the scripts rather than inside one of them.
+      - name: dry run over the fixture spec
+        if: always()
+        run: |
+          pwsh ci/parse-spec.ps1 -Spec ci/test-parse.md -Out parsed.json
+          pwsh ci/run-spec.ps1 -Parsed parsed.json -WorkDir . -DryRun
+
+      # The plan job selects which specs run, and it is inline YAML that no suite can reach.
+      # These two invariants are what it actually depends on, and both were broken on
+      # 2026-08-13 by a commit that only moved files - costing a high-priority page.
+      - name: spec selection invariants
+        if: always()
+        run: |
+          set -e
+          fail=0
+          # 1. Every top-level .md in specs/ must BE a spec. The plan job hands each one to
+          #    parse-spec.ps1, whose Fail() on a non-spec kills the whole run.
+          for f in specs/*.md; do
+            [ -e "$f" ] || continue
+            if ! grep -qE '^status:' "$f"; then
+              echo "FAIL $f is in specs/ but has no 'status:' line - it would break the plan job"
+              fail=1
+            else
+              echo "ok   $f is a spec"
+            fi
+          done
+          # 2. git's `*` crosses slashes and GitHub's does not. The plan job's pathspec must use
+          #    :(glob) so archived specs are invisible to it, exactly as they are to the trigger.
+          if git ls-files -- ':(glob)specs/*.md' | grep -q 'specs/archive/'; then
+            echo "FAIL the :(glob) pathspec is reaching into specs/archive/"
+            fail=1
+          else
+            echo "ok   :(glob)specs/*.md excludes the archive"
+          fi
+          grep -q ':(glob)specs/\*\.md' .github/workflows/loop.yml \
+            && echo "ok   loop.yml uses the :(glob) pathspec" \
+            || { echo "FAIL loop.yml lost its :(glob) pathspec"; fail=1; }
+          exit $fail
+
+      # The workflow files are the least-tested thing in the repo and a YAML typo takes the whole
+      # loop down. Parsing them costs nothing.
+      - name: workflows are valid YAML
+        if: always()
+        run: |
+          python3 - <<'EOF'
+          import sys, glob
+          try:
+              import yaml
+          except ImportError:
+              sys.exit(0)   # not worth installing a dep for; the runner usually has it
+          for f in glob.glob('.github/workflows/*.yml'):
+              yaml.safe_load(open(f))
+              print(f'ok   {f}')
+          EOF

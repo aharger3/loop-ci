@@ -90,6 +90,16 @@ ignored; it is the most common review finding.
   gate the run on it: a failed `gh pr create` under `set -e` once killed it and
   the notification behind it, so a 0/3 run reached Austin as silence.
 
+## Self-checks
+`.github/workflows/test.yml` runs every `ci/test-*` suite plus the watchdog test on each push,
+and they are all free — no model, no network, no secrets. **If you change a script under `ci/`,
+run its suite before you stop.** They exist because 166 lines of good tests sat in this repo
+with nothing running them.
+
+A `verify:` you write into a spec is checked at parse time now (`ci/test-parse.ps1`), so a row
+with no check, no `done-when:`, or a dangling `depends-on:` fails the plan job for zero tokens
+instead of after the spend.
+
 ## Writing files
 - `cd` to the spec's `project:` path before writing anything. Writing to the
   repo root instead stranded 6 files across 3 nights.
@@ -104,7 +114,8 @@ ignored; it is the most common review finding.
 - OMEN's problem is **detection, not filtering** (8/7): the engine fires on 4 of
   77 S bars. No new gate until recall clears 40%.
 - **ntfy is aborted** everywhere except the loop lifecycle topic `aharg-loop`
-  (start / blocked / recommend / done). Do not add a fifth notification type.
+  (start / blocked / done). Do not add a fourth notification type — `recommend` was deleted
+  2026-08-09, and `ci/test-notify.sh` now fails if a fourth becomes sendable.
 - **Hermes is dead.** No gateway, no agent fleet, no `hermes-vault-sync`.
 
 ## Scope
