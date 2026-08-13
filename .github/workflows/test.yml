@@ -14,8 +14,10 @@ on:
   workflow_dispatch:
 
 # Unlike The Loop, this SHOULD collapse: only the newest commit on a branch is worth checking.
+# `ref_name`, not `ref`: a push gives refs/heads/x while a pull_request gives x, so keying on
+# `ref` puts the two events for the SAME commit in different groups and runs the suite twice.
 concurrency:
-  group: selfcheck-${{ github.head_ref || github.ref }}
+  group: selfcheck-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
