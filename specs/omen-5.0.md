@@ -1,9 +1,29 @@
 # OMEN 5.0 - Trade the way Austin trades
 
-status: ready
+status: done
 version: omen-5.0
 repo: aharger3/tradingbot
 doc: Projects/OMEN.md
+
+<!-- CLOSED 2026-08-12. Left at `status: ready` with seven unchecked rows for a day, which
+     made the plan job select omen-5.0 alongside omen-5.1 on the 5.1 push (run 31660207049,
+     cancelled). Both jobs write the same files in the same repo — they would have collided.
+
+     The rows were never actually pending. T3, T4, T10, T11 and T12 were run BY HAND on the
+     Windows box on 2026-08-11 and pushed as `5e3677ea`; T8 landed as `45d0515d`. A manual
+     completion never runs `ci/checkoff.ps1`, so no `[x]` was ever written and the parser
+     saw seven live rows forever.
+
+     Verified against aharger3/tradingbot main before flipping this line — the artifacts,
+     not the checkboxes: research/t3_session_extreme.md, t4_stop_on_close.md, t8_two_year.md,
+     t10_pivot_levels.md, t11_s_quality.md, t12_recovered.md all present.
+
+     T9 (eye-to-eye agreement) is the one row that genuinely never ran. It is not lost —
+     it is omen-5.1 T7, with a confusion matrix, Cohen's kappa and a no-fire column added.
+
+     RULE: finishing a spec's rows outside loop-ci means flipping `status:` here in the same
+     session. A `ready` spec is a standing instruction to run on every future push. -->
+
 
 target: Fix the four mechanics that made the engine disagree with Austin on 78 of 80 graded cards — bar-close entries, wick-based stop-outs, no session window inside the detector, and a scattered mark corpus — then remeasure BR/OCR and the 84% rule separately.
 
