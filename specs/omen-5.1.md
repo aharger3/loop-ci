@@ -86,7 +86,7 @@ s_plus_references_remaining: 0
   ```
 
 
-### T2 -- Pessimistic target fill: a bar that touches target and closes beyond stop is a LOSS
+### [x] T2 -- Pessimistic target fill: a bar that touches target and closes beyond stop is a LOSS
 - model: opus
 
 This is the edge-deciding row. Read it twice before changing anything.
@@ -198,7 +198,7 @@ Write the file to `research/omen-5.1-fill-cards.html`.
   ```
 
 
-### T4 -- The honest EV table: pessimistic fill, R-capped, walk-forward out-of-sample
+### [x] T4 -- The honest EV table: pessimistic fill, R-capped, walk-forward out-of-sample
 - model: opus
 - depends-on: T2
 
@@ -246,7 +246,7 @@ Set `edge_survives: yes` only if `headline_ev_ci_low` is above zero.
   ```
 
 
-### T5 -- Why the index pool fires 18 times in two years
+### [x] T5 -- Why the index pool fires 18 times in two years
 - model: glm
 
 `INDEX_POOL` (QQQ/SPY/IWM) produced **18 trades in 501 trading days** while MAJOR_15
@@ -405,7 +405,7 @@ s_recall: <n>/<n>
   ```
 
 
-### T9 -- Head-to-head backtest: omen-5.0 vs omen-5.1, same window, same symbols
+### [x] T9 -- Head-to-head backtest: omen-5.0 vs omen-5.1, same window, same symbols
 - model: glm
 - depends-on: T1, T2
 
