@@ -1,6 +1,6 @@
 # OMEN 5.1 - Honest EV, a real S rate, and true-negative labels
 
-status: ready
+status: done
 version: omen-5.1
 repo: aharger3/tradingbot
 doc: Projects/OMEN.md
@@ -156,7 +156,7 @@ the target-fill assumption is not where the +0.914R came from.
   ```
 
 
-### T3 -- Card deck of every flipped trade, so Austin can see the fill rule with his own eyes
+### [x] T3 -- Card deck of every flipped trade, so Austin can see the fill rule with his own eyes
 - model: deepseek
 - depends-on: T2
 
@@ -469,7 +469,7 @@ largest_driver: <one phrase>
   ```
 
 
-### T8 -- The 5.1 verdict
+### [x] T8 -- The 5.1 verdict
 - model: deepseek
 - depends-on: everything
 
