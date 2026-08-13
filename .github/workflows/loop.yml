@@ -4,13 +4,17 @@ name: The Loop
 # No cron: Austin disabled every scheduled loop run on 2026-07-30 and asked more than once
 # that it stay that way. A push is a deliberate act, so this honours "runs are manual" while
 # removing the part that was actually work - opening a session and playing dispatcher.
+#
+# `paths` is specs/*.md - ONE level, deliberately not specs/**.md. Finished specs live in
+# specs/archive/ now, and a `**` glob would treat archiving a spec as a spec push and re-run
+# the thing that was just retired.
 on:
   push:
-    paths: ['specs/**.md']
+    paths: ['specs/*.md']
   workflow_dispatch:
     inputs:
       spec:
-        description: 'Single spec filename to run (blank = every specs/*.md with status: ready)'
+        description: 'Spec filename to run, e.g. omen-5.1.md (required - blank runs nothing)'
         required: false
 
 # NO workflow-level concurrency group. It used to be `group: loop`, which serialised every run
@@ -78,7 +82,17 @@ jobs:
                 Get-ChildItem specs -Filter *.md
               }
             } else {
-              Get-ChildItem specs -Filter *.md
+              # A BLANK manual run used to glob every specs/*.md still marked `ready` and fire
+              # them all in parallel. Austin 2026-08-13: "sometimes when I slash run old version
+              # specs start running in parallel and I don't want that to happen, just whatever
+              # version I'm running." One stale `ready` spec with a pending row - omen-4.0 - was
+              # enough to ride along on every blank run.
+              #
+              # A blank dispatch is now an unfinished sentence, not an instruction. It runs
+              # nothing, spends nothing, and says so through the nothing-pending notification
+              # below. Naming the spec is the only way to start a manual run.
+              Write-Host "::warning::manual run with no spec named - refusing to guess. Re-run and type a filename, e.g. omen-5.1.md"
+              @()
             }
 
           $rows    = @()
@@ -110,6 +124,17 @@ jobs:
           "count=$($rows.Count)" >> $env:GITHUB_OUTPUT
           ($skipped -join "`n") | Set-Content skipped.txt
 
+          # Why nothing ran, in his words not the workflow's. The blank-manual-run case is new
+          # and is the one that needs an instruction attached, not just a statement.
+          $reason =
+            if ($rows.Count) { '' }
+            elseif (-not $only -and '${{ github.event_name }}' -eq 'workflow_dispatch') {
+              "You started a run without naming a spec, so nothing ran and nothing was spent.`n`nRun it again from the Actions tab and type the spec filename in the box, e.g. omen-5.1.md"
+            } else {
+              'Nothing to run - the push touched no spec with pending rows.'
+            }
+          $reason | Set-Content reason.txt
+
       - name: Notify start + ETA
         if: steps.p.outputs.count != '0'
         env:
@@ -137,7 +162,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           {
-            echo "Nothing to run - the push touched no spec with pending rows."
+            cat reason.txt
             echo
             cat skipped.txt
             echo
@@ -191,10 +216,38 @@ jobs:
             echo "no requirements.txt in target repo, skipping"
           fi
 
-      - shell: pwsh
-        run: pwsh ci/parse-spec.ps1 -Spec "specs/${{ matrix.spec }}" -Out parsed.json
+      # Re-read the spec from the CURRENT main, not from the SHA this run was pinned to.
+      #
+      # 2026-08-13, runs 31682197977 + 31682198058: Austin pushed omen-5.1 and then hit Run on
+      # the same commit. The push started one run and the manual dispatch started another, both
+      # on 6684d00. The per-spec concurrency group below is `cancel-in-progress: false`, so the
+      # second did not collide - it QUEUED, waited 59 minutes, and then executed all six rows a
+      # second time on real spend. Two check-off commits, two `done` notifications 38 minutes
+      # apart, one of which Austin asked to be rid of.
+      #
+      # The first run HAD already written [x] back for those rows - but that commit landed after
+      # 6684d00, and actions/checkout pins to 6684d00, so run two re-parsed the stale copy and
+      # could not have seen it. Refreshing specs/ from origin/main closes that window. It also
+      # covers the case Austin hit on omen-5.0: rows finished by hand and checked off manually
+      # are now honoured instead of being re-run.
+      - name: Re-check pending rows against latest main
+        id: recheck
+        shell: pwsh
+        run: |
+          git fetch --depth 1 origin main 2>&1 | Out-Null
+          git checkout FETCH_HEAD -- specs/ 2>&1 | Out-Null
+          pwsh ci/parse-spec.ps1 -Spec "specs/${{ matrix.spec }}" -Out parsed.json
+          if ($LASTEXITCODE -ne 0) { throw "spec re-parse failed against latest main" }
+          $p = Get-Content parsed.json -Raw | ConvertFrom-Json
+          $pending = @($p.tasks | Where-Object { -not $_.done }).Count
+          Write-Host "$($p.version): $pending row(s) still pending on latest main"
+          "pending=$pending" >> $env:GITHUB_OUTPUT
 
+      # Every step from here is gated on there being work left. A no-op run still writes its
+      # result file below, so `report` sends one honest closing message instead of the silence
+      # that a skipped matrix leg would produce.
       - name: Execute
+        if: steps.recheck.outputs.pending != '0'
         shell: pwsh
         env:
           # opus bills the Max SUBSCRIPTION through this token (Austin 2026-08-11), not
@@ -212,6 +265,20 @@ jobs:
           POLYGON_API_KEY:    ${{ secrets.POLYGON_API_KEY }}
         run: pwsh ci/run-spec.ps1 -Parsed parsed.json -WorkDir "$PWD/work" -Out "result-${{ matrix.version }}.json"
 
+      # The duplicate-run case, said out loud. Without this the matrix leg would upload no
+      # artifact, `report` would find nothing, and a run that correctly did nothing would page
+      # "Loop produced no result" as though it had crashed.
+      - name: Nothing left to do
+        if: steps.recheck.outputs.pending == '0'
+        shell: pwsh
+        run: |
+          $p = Get-Content parsed.json -Raw | ConvertFrom-Json
+          @{ version = $p.version; repo = $p.repo; doc = $p.doc; target = $p.target
+             done = 0; total = 0; tasks = @(); questions = @(); ideas = @(); humanTasks = @()
+             retires = @(); noop = $true
+             plain = 'Every row in this spec was already finished, so this run did nothing and spent nothing.'
+           } | ConvertTo-Json -Depth 6 | Set-Content "result-${{ matrix.version }}.json"
+
       # A branch + PR, never a push straight to main - keeps a diff to look at if something's
       # off. It is merged when at least ONE row was confirmed by its verify command.
       #
@@ -223,6 +290,7 @@ jobs:
       # NOTHING was confirmed the PR stays open, because then there is genuinely nothing to
       # trust and the run pages blocked.
       - name: Open PR with the work, merge if anything was confirmed
+        if: steps.recheck.outputs.pending != '0'
         env:
           GH_TOKEN: ${{ secrets.LOOP_GH_TOKEN }}
         run: |
@@ -450,6 +518,7 @@ jobs:
           foreach ($r in $all) {
             $pr = if ($r.resultUrl) { " $($r.resultUrl)" } else { '' }
             $body += "$($r.version) -> $($r.repo)  ($($r.done)/$($r.total))$pr"
+            if ($r.noop) { $body += "  $($r.plain)" }
             foreach ($t in $r.tasks | Where-Object { $_.state -eq 'done' }) {
               $body += "  DONE  $(Short (Say $t) 150)"
             }
@@ -480,9 +549,15 @@ jobs:
           # run that confirmed nothing at all. Austin 2026-08-09: a failed row inside an
           # otherwise good run is listed in `done`, not paged. Blocked is the only type allowed
           # to wake anyone, and it stays that way by not firing for 5-of-6.
-          $needsHim = ($blocked.Count -gt 0) -or ($totDone -eq 0)
+          # A spec whose rows were ALL already finished reports 0 of 0. That is a no-op, not a
+          # failure, and it must not page: 0-of-0 is the shape of the duplicate second run that
+          # the recheck step now short-circuits, and paging there would just move Austin's
+          # duplicate `done` notification onto the high-priority channel.
+          $allNoop = ($all.Count -gt 0) -and (@($all | Where-Object { -not $_.noop }).Count -eq 0)
+          $needsHim = ($blocked.Count -gt 0) -or (($totDone -eq 0) -and -not $allNoop)
           $type  = if ($needsHim) { 'blocked' } else { 'done' }
           $title = if ($blocked.Count) { "Loop blocked - $($blocked.Count) fix(es) needed" }
+                   elseif ($allNoop) { 'Loop - already finished, nothing to do' }
                    elseif ($totDone -eq 0) { "Loop confirmed nothing - 0/$totAll" }
                    else { "Loop done - $totDone/$totAll" }
           $body | Set-Content body.txt

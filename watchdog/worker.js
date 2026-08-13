@@ -44,8 +44,11 @@ export default {
   },
 };
 
+// env.fetch is an injection point for check.test.js and nothing else. In production env comes
+// from the Cloudflare runtime and has no `fetch` key, so this is the global one. The test can
+// then replay recorded GitHub responses through the REAL check(), with no token and no network.
 async function gh(env, path) {
-  const r = await fetch(`https://api.github.com${path}`, {
+  const r = await (env.fetch || fetch)(`https://api.github.com${path}`, {
     headers: {
       Authorization: `Bearer ${env.GH_TOKEN}`,
       Accept: 'application/vnd.github+json',

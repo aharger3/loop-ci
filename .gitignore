@@ -4,3 +4,4 @@ blocked-test.json
 result-*.json
 body.txt
 pw-body.txt
+__pycache__/

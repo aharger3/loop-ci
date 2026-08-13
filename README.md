@@ -12,6 +12,18 @@ push specs/*.md
   -> report   rendered table on the run page + a PR per spec on the target repo.
 ```
 
+**A push runs the spec(s) the push touched, and nothing else.** A manual run from the Actions
+tab must name its spec: leaving the box blank runs nothing and says so. It used to glob every
+spec still marked `ready`, so one stale spec with an unfinished row rode along on every manual
+run — which is how old versions ended up running in parallel with the one Austin meant.
+
+Finished and abandoned specs live in `specs/archive/`, where neither the trigger nor the planner
+can see them. `specs/` holds live work only.
+
+Before the first token is spent, the run re-reads its spec from the current `main`. If the rows
+were already checked off — by another run, or by hand — it stops there and reports a no-op
+instead of doing the work twice.
+
 ## Spec format
 
 Unchanged from the old loop, minus the FOCUS.md indirection — a spec is now self-describing:
@@ -117,24 +129,32 @@ sentence. Nothing re-summarises; N rows, N voices.
 Costs nothing, proves routing and order:
 
 ```bash
-pwsh ci/parse-spec.ps1 -Spec specs/omen-v3.2.md -Out parsed.json
+pwsh ci/parse-spec.ps1 -Spec specs/omen-4.0.md -Out parsed.json
 pwsh ci/run-spec.ps1 -Parsed parsed.json -WorkDir . -DryRun
 ```
 
-`ci/test-parse.md` is the parser self-check: 5 rows, 3 tiers, a dependency chain, one `[x]`,
-both `verify:` dialects, and a `depends-on: everything`. Parse it and dry-run it — if the
-printed order, tiers or verify commands change, something broke.
+## Self-checks
 
-Two more, neither of which spends a token:
+`.github/workflows/test.yml` runs all of these on every push. None spends a token, touches the
+network, or needs a secret — which is why they gate rather than being something to remember.
 
 ```bash
+pwsh ci/test-parse.ps1          # parse-spec.ps1: routing, order, both verify: dialects
 pwsh ci/test-result-parse.ps1   # what a row is allowed to say about itself
+pwsh ci/test-verify-core.ps1    # TopoOrder + Invoke-Verify: what runs, and what counts as passed
 pwsh ci/test-pipeline.ps1       # checkoff.ps1 + vault-sync.ps1, on throwaway copies
+bash  ci/test-notify.sh         # notify.sh, against a fake curl — sends nothing
+python3 ci/test-price-watch.py  # price-watch.py, against canned prices
+node  watchdog/check.test.js    # the watchdog's one boolean, against recorded runs
 ```
 
-`ci/test-pipeline.ps1` covers the two scripts that edit files by hand. It caught a real bug
-before it shipped: rebuilding a `### T1 -- title` heading from its captured parts produced
-`### [x] T1 - - title`.
+`ci/test-parse.md` is the parser fixture: 5 rows, 3 tiers, a dependency chain, one `[x]`, both
+`verify:` dialects, and a `depends-on: everything`. It used to be checked by a human reading the
+dry-run output; `ci/test-parse.ps1` asserts against it now.
+
+These find real bugs. `ci/test-pipeline.ps1` caught a heading rebuilt as `### [x] T1 - - title`
+before it shipped. `ci/test-price-watch.py` caught the price watcher advising Austin to replace
+his coding tier with his own grunt model.
 
 ## What this replaced
 

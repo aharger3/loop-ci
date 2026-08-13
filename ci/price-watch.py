@@ -137,8 +137,16 @@ def main():
                                else " Consider swapping this tier.")
                         )
         # A challenger must be cheaper AND not lose context, or the swap costs a rewrite.
+        #
+        # `k not in STACK.values()`, not just `k != mid`: without it the tiers challenge EACH
+        # OTHER. deepseek is 55% cheaper than glm at the same 1M context, so this told Austin to
+        # replace his CODING tier with his GRUNT model - which is not a price finding at all, it
+        # is the "flash and glm are interchangeable" mistake the module docstring above says the
+        # first report already made once. A tier he chose on capability is not a rival to a tier
+        # he chose on price. Found 2026-08-13 by ci/test-price-watch.py.
         rivals = [(blended(v), k, v) for k, v in now.items()
-                  if k != mid and v["ctx"] >= cur["ctx"] * 0.9 and blended(v) < blended(cur) * 0.7]
+                  if k not in STACK.values() and v["ctx"] >= cur["ctx"] * 0.9
+                  and blended(v) < blended(cur) * 0.7]
         if rivals:
             _, name, v = min(rivals)
             lines.append(
