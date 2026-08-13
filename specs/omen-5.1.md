@@ -268,18 +268,29 @@ loss_is_upstream_of_gates: <yes|no>
   ```
 
 
-### T6 -- The engine-blind TSLA day deck: 60 consecutive days, no engine marks
+### T6 -- Two engine-blind day decks: TSLA 60 days, and QQQ/SPY 60 days
 - model: deepseek
 
 Every card deck so far has been **one card per engine fire**, which can only measure
 precision. Recall is the gate, and recall needs labels on days the engine fires
-**nothing**. Austin's own estimate is that roughly **60% of TSLA days contain an S
-trade**; the engine finds S on a handful. This deck tests that directly.
+**nothing**. Austin's estimate is that roughly **60% of TSLA days contain an S trade**;
+the engine finds S on a handful. And the index pool has produced **18 trades in two
+years**, which is far too small a sample to judge — it is also the fastest route to
+profitability, so it needs its own labelled corpus, not a footnote.
 
-Build `research/omen-5.1-tsla-day-deck.html` from `data_archive/` — **one card per
-trading day**, the **60 most recent consecutive TSLA trading days** in the archive, with
-no days skipped for any reason. Same self-contained single-file HTML format as the
-existing decks.
+Build **two separate self-contained HTML decks** from `data_archive/`, same single-file
+format as the existing decks (no CDN, opens by double-click). Two files, not one, so each
+is a single sitting:
+
+1. `research/omen-5.1-tsla-day-deck.html` — the **60 most recent consecutive TSLA trading
+   days** in the archive, no days skipped for any reason.
+2. `research/omen-5.1-index-day-deck.html` — the **30 most recent consecutive QQQ days**
+   followed by the **30 most recent consecutive SPY days**, 60 cards total, again with no
+   days skipped. Keep the two symbols in contiguous blocks rather than interleaved so the
+   read stays in one instrument at a time.
+
+There is no futures deck: the archive has no ES/NQ data and adding a futures feed is a new
+dependency, not a card-building task. Flag it in the run summary as a 5.2 decision.
 
 Each card shows the **full 09:30–11:00 1-minute candle chart** for that day and nothing
 else that could bias the read:
@@ -289,25 +300,34 @@ else that could bias the read:
   the whole point of the deck; an overlay anywhere invalidates the batch.
 - Prior-day high/low **may** be drawn, since Austin reads those off the chart himself —
   but nothing the engine computed.
-- A card id of the form `TSLA_<YYYY-MM-DD>`, a free-text notes box, and a grade selector
-  offering **S / A / C / none**, where **`none` means "no tradeable setup on this day"**
-  and is a first-class answer, not a skip.
+- A card id of the form `<SYMBOL>_<YYYY-MM-DD>`, a free-text notes box, and a grade
+  selector offering **S / A / C / none**, where **`none` means "no tradeable setup on this
+  day"** and is a first-class answer, not a skip.
+- The notes box is where new rules come from — the 5.0 T2 note-mining pulled 18 free marks
+  out of Austin's prose. Label it `What made this a trade (or not)?` to invite the clause,
+  not just the grade.
 
-The deck must export grades as JSONL to the clipboard or a download, one row per card with
+Each deck exports grades as JSONL by download **and** clipboard, one row per card with
 `card_id`, `symbol`, `date`, `grade`, `entry_i` (minutes from 09:30, blank if `none`), and
-`notes`. Also write `research/t51_day_deck_manifest.jsonl` — one row per card with
-`card_id`, `date`, and `engine_fires_that_day` (the count the engine actually produced).
-**The manifest is for scoring after Austin grades, and its contents must not appear
-anywhere in the HTML.**
+`notes`. Progress must survive a page reload — persist answers to `localStorage` keyed by
+`card_id`, since 60 cards is longer than one sitting.
 
-- **done-when:** the deck has exactly 60 day cards, contains no engine-derived overlay,
-  offers `none` as a grade, and the manifest has 60 rows carrying the engine fire counts.
+Also write `research/t51_day_deck_manifest.jsonl` — one row per card across **both** decks
+(120 rows) with `card_id`, `symbol`, `date`, `deck`, and `engine_fires_that_day` (the count
+the engine actually produced). **The manifest is for scoring after Austin grades, and its
+contents must not appear anywhere in either HTML file.**
+
+- **done-when:** both decks exist with exactly 60 cards each, neither contains an
+  engine-derived overlay, both offer `none` and persist to localStorage, and the manifest
+  has 120 rows carrying the engine fire counts.
 - **verify:**
   ```bash
   test -s research/omen-5.1-tsla-day-deck.html
+  test -s research/omen-5.1-index-day-deck.html
   python -c 'import sys; h=open("research/omen-5.1-tsla-day-deck.html").read(); sys.exit(0 if h.count("class=\"card\"")==60 else 1)'
-  python -c 'import sys; h=open("research/omen-5.1-tsla-day-deck.html").read(); sys.exit(0 if "none" in h and "austin_tier" not in h and "engine_fires" not in h else 1)'
-  python -c "import json,sys; r=[json.loads(l) for l in open('research/t51_day_deck_manifest.jsonl')]; sys.exit(0 if len(r)==60 and all('engine_fires_that_day' in x for x in r) else 1)"
+  python -c 'import sys; h=open("research/omen-5.1-index-day-deck.html").read(); sys.exit(0 if h.count("class=\"card\"")==60 and "QQQ_" in h and "SPY_" in h else 1)'
+  python -c 'import sys; [sys.exit(1) for f in ["research/omen-5.1-tsla-day-deck.html","research/omen-5.1-index-day-deck.html"] if not ("none" in open(f).read() and "austin_tier" not in open(f).read() and "engine_fires" not in open(f).read() and "localStorage" in open(f).read())]'
+  python -c "import json,sys; r=[json.loads(l) for l in open('research/t51_day_deck_manifest.jsonl')]; sys.exit(0 if len(r)==120 and all('engine_fires_that_day' in x and 'deck' in x for x in r) else 1)"
   ```
 
 
@@ -360,6 +380,70 @@ s_recall: <n>/<n>
   ```
 
 
+### T9 -- Head-to-head backtest: omen-5.0 vs omen-5.1, same window, same symbols
+- model: glm
+- depends-on: T1, T2
+
+Austin's standing complaint is that **every backtest looks the same** and nobody can tell
+what a version actually changed. 5.0 T7 was supposed to build a churn report and never
+did. Build it here, permanently.
+
+Run `research/t8_two_year.py` twice over the **identical** window (2024-08-12 → 2026-08-11,
+501 days, 29 symbols, $1,000 risk):
+
+- **arm 5.0** — the committed 5.0 defaults: three-clause S bar, S+ tier live,
+  `PESSIMISTIC_FILL=0`.
+- **arm 5.1** — the new defaults from T1 and T2: mesh-veto-only S, no S+ tier,
+  `PESSIMISTIC_FILL=1`.
+
+Write `research/t51_vs_t50.md` containing:
+
+1. **Headline table** — trades, wins, losses, scratches, win rate, P&L, EV/trade for each
+   arm, plus the delta column. Split by pool (MAJOR_15 / INDEX_POOL / OTHER_POOL) and by
+   setup (BR / OCR / 84%).
+2. **Tier table** — count, win rate and EV per Austin tier in each arm. S+ appears in the
+   5.0 arm only; say where those trades landed in 5.1.
+3. **The churn report** — the thing that has never existed. Join the two arms on
+   `(symbol, date, entry_i)` and report four counts with a worked example row for each:
+   - **added** — trades 5.1 takes that 5.0 did not
+   - **dropped** — trades 5.0 took that 5.1 does not
+   - **regraded** — same trade, different tier
+   - **reoutcomed** — same trade, same tier, different win/loss (this is T2's fill fix)
+   Write the full join to `research/t51_churn.jsonl`, one row per differing trade with
+   `symbol`, `date`, `entry_i`, `change` (one of the four), and the before/after values.
+4. **One plain-English paragraph** naming the single largest driver of the P&L delta.
+
+If a category is empty, print `0` and say so — never omit a row. A silent zero is how
+"nothing moved" became a suspicion instead of a fact.
+
+End the file with exactly these lines:
+
+```
+arm50_trades: <n>
+arm50_win_rate: <pct>
+arm50_ev_r: <R>
+arm51_trades: <n>
+arm51_win_rate: <pct>
+arm51_ev_r: <R>
+churn_added: <n>
+churn_dropped: <n>
+churn_regraded: <n>
+churn_reoutcomed: <n>
+largest_driver: <one phrase>
+```
+
+- **done-when:** both arms ran on the same window, all four churn counts are reported with
+  a worked example, `research/t51_churn.jsonl` exists, and the trailer lines are present.
+- **verify:**
+  ```bash
+  test -s research/t51_vs_t50.md
+  test -s research/t51_churn.jsonl
+  python -c "import re,sys; t=open('research/t51_vs_t50.md').read(); ks=['arm50_trades','arm50_win_rate','arm50_ev_r','arm51_trades','arm51_win_rate','arm51_ev_r','churn_added','churn_dropped','churn_regraded','churn_reoutcomed','largest_driver']; sys.exit(0 if all(re.search(r'^%s: \\S+'%k,t,re.M) for k in ks) else 1)"
+  python -c "import json,sys; r=[json.loads(l) for l in open('research/t51_churn.jsonl')]; sys.exit(0 if r and all(x.get('change') in ('added','dropped','regraded','reoutcomed') for x in r) else 1)"
+  python -c "import re,sys; t=open('research/t51_vs_t50.md').read(); n=int(re.search(r'^arm51_trades: (\\d+)',t,re.M).group(1)); sys.exit(0 if n>0 else 1)"
+  ```
+
+
 ### T8 -- The 5.1 verdict
 - model: deepseek
 - depends-on: everything
@@ -379,8 +463,11 @@ Cover, in this order:
 4. **Why the index pool is silent**, from `research/t51_index_funnel.md`, and whether the
    fix is gate tuning or new level geometry.
 5. **The eye-match baseline** from `research/t51_eye_match.md` — the agreement number the
-   graded day deck will be scored against.
-6. **What Austin has to do next**, as a single named action.
+   graded day decks will be scored against.
+6. **What 5.1 actually changed vs 5.0**, from `research/t51_vs_t50.md` — the four churn
+   counts and the largest driver of the P&L delta, in one short paragraph.
+7. **What Austin has to do next**, as a single named action. It is grading the two decks;
+   name the files and the card counts.
 
 End the file with exactly these lines:
 
@@ -397,7 +484,7 @@ verdict_next_action: <one sentence>
 - **verify:**
   ```bash
   test -s research/v51_verdict.md
-  for f in t51_ev_honest.md t51_fill.md t51_s_bar.md t51_index_funnel.md t51_eye_match.md; do grep -q "$f" research/v51_verdict.md || exit 1; done
+  for f in t51_ev_honest.md t51_fill.md t51_s_bar.md t51_index_funnel.md t51_eye_match.md t51_vs_t50.md; do grep -q "$f" research/v51_verdict.md || exit 1; done
   python -c "import re,sys; v=open('research/v51_verdict.md').read(); e=open('research/t51_ev_honest.md').read(); a=re.search(r'^verdict_ev_r: (\\S+)',v,re.M).group(1); b=re.search(r'^headline_ev_r: (\\S+)',e,re.M).group(1); sys.exit(0 if a==b else 1)"
   grep -qE '^verdict_next_action: .+' research/v51_verdict.md
   ```
