@@ -15,7 +15,7 @@ on:
 
 # Unlike The Loop, this SHOULD collapse: only the newest commit on a branch is worth checking.
 concurrency:
-  group: selfcheck-${{ github.ref }}
+  group: selfcheck-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -63,6 +63,38 @@ jobs:
         run: |
           pwsh ci/parse-spec.ps1 -Spec ci/test-parse.md -Out parsed.json
           pwsh ci/run-spec.ps1 -Parsed parsed.json -WorkDir . -DryRun
+
+      # The plan job selects which specs run, and it is inline YAML that no suite can reach.
+      # These two invariants are what it actually depends on, and both were broken on
+      # 2026-08-13 by a commit that only moved files - costing a high-priority page.
+      - name: spec selection invariants
+        if: always()
+        run: |
+          set -e
+          fail=0
+          # 1. Every top-level .md in specs/ must BE a spec. The plan job hands each one to
+          #    parse-spec.ps1, whose Fail() on a non-spec kills the whole run.
+          for f in specs/*.md; do
+            [ -e "$f" ] || continue
+            if ! grep -qE '^status:' "$f"; then
+              echo "FAIL $f is in specs/ but has no 'status:' line - it would break the plan job"
+              fail=1
+            else
+              echo "ok   $f is a spec"
+            fi
+          done
+          # 2. git's `*` crosses slashes and GitHub's does not. The plan job's pathspec must use
+          #    :(glob) so archived specs are invisible to it, exactly as they are to the trigger.
+          if git ls-files -- ':(glob)specs/*.md' | grep -q 'specs/archive/'; then
+            echo "FAIL the :(glob) pathspec is reaching into specs/archive/"
+            fail=1
+          else
+            echo "ok   :(glob)specs/*.md excludes the archive"
+          fi
+          grep -q ':(glob)specs/\*\.md' .github/workflows/loop.yml \
+            && echo "ok   loop.yml uses the :(glob) pathspec" \
+            || { echo "FAIL loop.yml lost its :(glob) pathspec"; fail=1; }
+          exit $fail
 
       # The workflow files are the least-tested thing in the repo and a YAML typo takes the whole
       # loop down. Parsing them costs nothing.

@@ -59,11 +59,18 @@ jobs:
               @(Get-Item "specs/$only")
             } elseif ('${{ github.event_name }}' -eq 'push') {
               $before = '${{ github.event.before }}'
+              # `:(glob)` matters. In a git pathspec a bare `specs/*.md` matches ACROSS slashes,
+              # so it also returns specs/archive/*.md - the one place git and GitHub disagree,
+              # since the `paths:` filter above treats `*` as stopping at a slash. On 2026-08-13
+              # that mismatch handed specs/archive/README.md to parse-spec.ps1, which correctly
+              # refused a file with no repo: line, which threw, which failed plan, which paged
+              # Austin "Loop never started" for a commit that only moved files. :(glob) makes
+              # git's `*` mean what GitHub's `*` already meant.
               $touched = @(
                 if ($before -and $before -notmatch '^0+$') {
-                  git diff --name-only $before '${{ github.sha }}' -- 'specs/*.md'
+                  git diff --name-only $before '${{ github.sha }}' -- ':(glob)specs/*.md'
                 } else {
-                  git show --name-only --pretty=format: '${{ github.sha }}' -- 'specs/*.md'
+                  git show --name-only --pretty=format: '${{ github.sha }}' -- ':(glob)specs/*.md'
                 }) | Where-Object { $_ }
               # A DELETED spec is touched but gone from disk. That must run nothing at all -
               # falling through to "every ready spec" here would re-introduce the exact
@@ -102,8 +109,18 @@ jobs:
             # Austin 2026-08-05: one VOID spec sitting in specs/ crashed the plan job for every
             # future push until this was caught. Skip it here, before parse-spec.ps1 ever sees
             # it - its own hard Fail() stays as the safety net for a spec matrixed in directly.
-            $statusLine = [regex]::Match((Get-Content $s.FullName -Raw), '(?m)^status:\s*(.+?)\s*$')
+            $raw = Get-Content $s.FullName -Raw
+            $statusLine = [regex]::Match($raw, '(?m)^status:\s*(.+?)\s*$')
             $st = if ($statusLine.Success) { $statusLine.Groups[1].Value } else { '' }
+            # A .md in specs/ that is not a spec at all - a README, a note - must be SKIPPED,
+            # never handed to parse-spec.ps1. Its Fail() is correct but fatal, and one stray
+            # file taking down the plan job costs a high-priority page for a commit that ran
+            # nothing. Same principle as the void-spec skip below: one bad file must not take
+            # the rest of the push with it. 2026-08-13: specs/archive/README.md did exactly this.
+            if (-not $statusLine.Success) {
+              Write-Host "$($s.Name): no 'status:' line - not a spec, skipping"
+              continue
+            }
             if ($st -and $st -notin @('ready', 'running')) {
               Write-Host "$($s.Name): status is '$st', not ready - skipping"
               $skipped += "$($s.BaseName) (status: $st)"; continue
