@@ -128,15 +128,31 @@ ev_optimistic: <R>
 ev_pessimistic: <R>
 ```
 
+**The first run of this row already produced the answer, and it is ZERO.** `trades_flipped: 0`
+across 1,017 trades; win rate and EV are byte-identical in both arms (55.0%, +0.873R). The
+12 rows in the flip list are all `win -> win` R-reductions on `counted: false` trades the
+engine never took. That is because same-bar ties were **already** resolved as losses in both
+the ladder and binary paths — 5.0's own caveat said so, and this row proves it.
+
+**So the asymmetry was not inflating the backtest.** Keep the flag and the machinery — it
+makes the assumption explicit instead of implicit — but the honest-EV question now rests
+entirely on the *other* two inflators, in-sample fitting and the uncapped runner, which is
+T4's job. Re-running this row should reproduce zero and say so plainly.
+
+Add one more trailer line, `flips_change_outcome: <n>`, counting only trades where
+`counted` is true **and** `old_outcome != new_outcome`. State in prose what a zero means:
+the target-fill assumption is not where the +0.914R came from.
+
 - **done-when:** `PESSIMISTIC_FILL` defaults on, same-bar touch-and-close-beyond books the
-  loss at every ladder rung, both arms run, and the flip list is non-empty with a
-  pessimistic win rate no higher than the optimistic one.
+  loss at every ladder rung, both arms run, and the report states the outcome-flip count
+  with a pessimistic win rate no higher than the optimistic one.
 - **verify:**
   ```bash
   test -s research/t51_fill.md
-  test -s research/t51_fill_flip.jsonl
-  python -c "import json,sys; rows=[json.loads(l) for l in open('research/t51_fill_flip.jsonl')]; sys.exit(0 if rows and all(set(('symbol','date','entry_i','flip_bar_i','old_outcome','new_outcome','old_r','new_r','stop','target'))<=set(r) for r in rows) else 1)"
-  python -c "import re,sys; t=open('research/t51_fill.md').read(); g=lambda k: float(re.search(r'^%s: ([-0-9.]+)'%k,t,re.M).group(1)); sys.exit(0 if g('win_rate_pessimistic')<=g('win_rate_optimistic') and g('trades_flipped')>0 else 1)"
+  test -f research/t51_fill_flip.jsonl
+  python -c "import json,sys; rows=[json.loads(l) for l in open('research/t51_fill_flip.jsonl')]; sys.exit(0 if all(set(('symbol','date','entry_i','flip_bar_i','old_outcome','new_outcome','old_r','new_r','stop','target'))<=set(r) for r in rows) else 1)"
+  python -c "import re,sys; t=open('research/t51_fill.md').read(); g=lambda k: float(re.search(r'^%s: ([-0-9.]+)'%k,t,re.M).group(1)); sys.exit(0 if g('win_rate_pessimistic')<=g('win_rate_optimistic') and g('ev_pessimistic')<=g('ev_optimistic') and g('trades_total')>0 else 1)"
+  grep -qE '^flips_change_outcome: [0-9]+$' research/t51_fill.md
   ```
 
 
@@ -148,17 +164,26 @@ Austin asked to verify the target-fill mechanics visually before trusting the nu
 Build an HTML card deck from `research/t51_fill_flip.jsonl` — the same self-contained
 single-file format as `omen-5.0-br-cards.html`, no external CDN, opens by double-click.
 
-**One card per flipped trade.** Each card shows the 09:30–11:00 1-minute candle chart for
-that symbol-day with:
+**Note what T2 found before building this: no *counted* trade changes outcome.** The rows
+in the flip list are R-reductions, and every one sits on a trade the engine never took
+(`counted: false`). The deck is still worth building — it is how Austin checks the
+mechanic with his own eyes — but it must not be captioned as if wins became losses.
+
+**One card per row in the flip list.** Each card shows the 09:30–11:00 1-minute candle
+chart for that symbol-day with:
 
 - horizontal lines for **entry**, **stop**, and **target**, each labelled with its price
 - the **entry bar** outlined
 - the **flip bar** highlighted in a distinct colour, with a caption directly under the
   chart reading: `This bar touched the target at <target> AND closed at <close>, beyond
-  the stop at <stop>. Old model: WIN <old_r>R. New model: LOSS <new_r>R.`
+  the stop at <stop>. Old model: <old_outcome> <old_r>R. New model: <new_outcome>
+  <new_r>R.` — take the outcome words from the data, never hard-code WIN or LOSS.
+- a badge on any card whose trade has `counted: false`, reading `not a traded signal
+  (<status>)`, so it is obvious at a glance that the row did not affect P&L.
 
-Sort cards by `abs(old_r - new_r)` descending so the most consequential flips are first.
-Header of the deck states the totals from `research/t51_fill.md`.
+Sort cards by `abs(old_r - new_r)` descending so the most consequential rows are first.
+The deck header states the totals from `research/t51_fill.md` and, in one sentence, that
+**zero counted trades changed outcome** if that is what the report says.
 
 Write the file to `research/omen-5.1-fill-cards.html`.
 
@@ -261,7 +286,7 @@ loss_is_upstream_of_gates: <yes|no>
 - **verify:**
   ```bash
   test -s research/t51_index_funnel.md
-  grep -qE '^top_killer_gate: \\S+' research/t51_index_funnel.md
+  grep -qE '^top_killer_gate: [^[:space:]]+' research/t51_index_funnel.md
   grep -qE '^loss_is_upstream_of_gates: (yes|no)$' research/t51_index_funnel.md
   grep -q 'TSLA' research/t51_index_funnel.md
   git diff --exit-code signal_runner.py universe.py backtest_week.py
