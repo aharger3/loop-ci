@@ -68,7 +68,7 @@ makes the worker recover from its own interruptions and report once, at the end.
 - No new scheduled task, no cron. `\NightWorker` already exists.
 
 
-### T1 -- Stage C reads frames on the local GPU first, Gemini only on failure
+### [x] T1 -- Stage C reads frames on the local GPU first, Gemini only on failure
 - model: glm
 
 `stagec.py` currently calls `gemini()` for every keyframe and paces itself with
@@ -115,7 +115,7 @@ that frame without calling Gemini, and the `model` field is written correctly in
   ```
 
 
-### T2 -- slack.py: post one message to #night-worker as Night Worker
+### [x] T2 -- slack.py: post one message to #night-worker as Night Worker
 - model: deepseek
 
 New `slack.py`, stdlib only (`urllib`, `json`, `os`), same shape and discipline as the
@@ -146,7 +146,7 @@ payload with `NW_SLACK_DISABLE` forced on, exits 0, and opens no socket.
   ```
 
 
-### T3 -- brief.py: one structured 08:00 report, built from tonight's log only
+### [x] T3 -- brief.py: one structured 08:00 report, built from tonight's log only
 - model: glm
 - depends-on: T2
 
@@ -205,7 +205,7 @@ are numbered.
   ```
 
 
-### T4 -- The worker survives its own interruptions instead of dying silently
+### [x] T4 -- The worker survives its own interruptions instead of dying silently
 - model: glm
 
 This is the row that makes 23 hours trustworthy. Three changes in `worker.ps1`, all
