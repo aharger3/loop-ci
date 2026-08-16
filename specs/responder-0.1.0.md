@@ -151,7 +151,7 @@ directory beats the repo copy.
   ```
 
 
-### T3 -- runner.py: invoke claude -p as the persona, one session per channel
+### [x] T3 -- runner.py: invoke claude -p as the persona, one session per channel
 - model: glm
 
 New `runner.py`. `ask(persona, text, channel) -> str|None` shells out to the `claude` CLI in
@@ -244,7 +244,7 @@ the next channel; the daily cap stops replies but not reactions.
   ```
 
 
-### T5 -- Install it on the box so it survives a reboot
+### [x] T5 -- Install it on the box so it survives a reboot
 - model: deepseek
 
 New `install.ps1`, **ASCII-only** - non-ASCII characters in a `.ps1` on this box become
