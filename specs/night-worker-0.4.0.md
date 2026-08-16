@@ -28,7 +28,7 @@ target: get the 213 waiting extracts through stage C unattended - kill the 403 w
      catalog.jsonl generalization are explicitly OUT of this version. -->
 
 
-### T1 -- Client + format ladder so a 403 is not the end of the video
+### [x] T1 -- Client + format ladder so a 403 is not the end of the video
 
 - model: glm
 
