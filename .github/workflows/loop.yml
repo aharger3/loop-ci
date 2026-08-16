@@ -200,7 +200,13 @@ jobs:
           for d in skills agents plugins; do
             [ -d "kit/.claude/$d" ] || continue
             mkdir -p "work/.claude/$d"
-            rsync -a --ignore-existing "kit/.claude/$d/" "work/.claude/$d/"
+            # graphify and obsidian are third-party skills Austin uses interactively in the
+            # vault. They are in the kit so his laptops get them from git, but they are noise
+            # in a code repo - every skill's description costs input tokens on every row, and
+            # an Obsidian-markdown skill has nothing to say to tradingbot.
+            rsync -a --ignore-existing \
+              --exclude 'graphify/' --exclude 'obsidian/' \
+              "kit/.claude/$d/" "work/.claude/$d/"
             echo "staged $d: $(ls "work/.claude/$d" | tr '\n' ' ')"
             # The staged kit must NEVER end up in the PR - it is scaffolding, not work, and a
             # `git add -A` later in this job would otherwise commit the vault's skills into
