@@ -258,7 +258,7 @@ worked, and today it means nothing at all.
 - **done-when:** no Telegram reference survives in the workflow, both jobs notify ntfy topic aharg-errors on `if: always()`, and a run with `submitted: 0` produces a high-priority alert rather than a silent green check.
 - **verify:**
   ```bash
-  grep -ci telegram .github/workflows/daily-submit.yml | grep -q '^0$'
+  ! grep -qi telegram .github/workflows/daily-submit.yml
   grep -q "ntfy.sh/aharg-errors" .github/workflows/daily-submit.yml
   test "$(grep -c 'ntfy.sh/aharg-errors' .github/workflows/daily-submit.yml)" -ge 2
   grep -q "run-summary.json" .github/workflows/daily-submit.yml
