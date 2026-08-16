@@ -266,7 +266,7 @@ worked, and today it means nothing at all.
   ```
 
 
-### T5 -- Rewrite the docs to say what 1.1 changed and why the green week was false
+### [x] T5 -- Rewrite the docs to say what 1.1 changed and why the green week was false
 - model: glm
 
 `README.md` still describes the May bot and `actors-access-progress.md` still
