@@ -72,6 +72,15 @@ repo root by `src/index.js` at the end of every run, success or failure:
 
 Both T3 and T4 depend on that exact shape. Neither may change it.
 
+**Run 1 (31916106338), 2026-08-15 — T1/T2/T3 landed; T4/T5 lost to the tier, not
+the spec.** Both burned all three attempts in 5–11 seconds with no stdout and no
+file edits — an empty completion, not failed work. T2 passed on deepseek at
+23:59, then every later deepseek row returned empty; night-worker-0.4.0 hit the
+identical pattern twenty minutes later and was moved to glm for the same reason.
+T4/T5/T6 are pinned to glm here. Note that `run-spec.ps1` redirects agent stderr
+to a temp file and never prints it, so this class of failure leaves an empty log
+group and is invisible from the run page.
+
 
 ### [x] T1 -- Parse the real posting time and window against the last successful run
 - model: opus
@@ -219,6 +228,7 @@ exactly one role from a list of three, and `limit` unset returns all.
 
 
 ### T4 -- Replace failure-only Telegram with ntfy that shouts on a zero-submit run
+- model: glm
 
 The reason a week of empty runs went unnoticed is that the only notification in
 `.github/workflows/daily-submit.yml` is `if: failure()` curling Telegram.
@@ -257,6 +267,7 @@ worked, and today it means nothing at all.
 
 
 ### T5 -- Rewrite the docs to say what 1.1 changed and why the green week was false
+- model: glm
 
 `README.md` still describes the May bot and `actors-access-progress.md` still
 reads as if the thing works. `outage-postmortem.md` documents the June outage
@@ -288,6 +299,7 @@ ntfy alerting in place of Telegram. Bump `package.json` version to `1.1.0`.
 
 
 ### T6 -- Write the one-page checklist for Austin's live single-role proof
+- model: glm
 - depends-on: everything
 
 Nothing in this spec can prove that `submitRole` still works against the live
