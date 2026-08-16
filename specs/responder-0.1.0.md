@@ -98,6 +98,7 @@ retried and then succeeds; `RESPONDER_DISABLE_IO=1` opens no socket.
   and re-reading after a cursor write returns zero messages.
 - **verify:**
   ```bash
+  python -m pip install -q pytest
   python -m pytest tests/test_slackio.py -q
   grep -q 'bot_id' slackio.py
   grep -q 'cursor.json' slackio.py
@@ -143,6 +144,7 @@ directory beats the repo copy.
   files parse with a non-empty prompt.
 - **verify:**
   ```bash
+  python -m pip install -q pytest
   python -m pytest tests/test_personas.py -q
   test -s agents/night-worker.md
   test -s agents/omen.md
@@ -189,6 +191,7 @@ returns `None`; empty stdout returns `None`; an over-long reply is truncated.
   process.
 - **verify:**
   ```bash
+  python -m pip install -q pytest
   python -m pytest tests/test_runner.py -q
   grep -q 'sessions.json' runner.py
   grep -q 'timeout' runner.py
@@ -239,6 +242,7 @@ the next channel; the daily cap stops replies but not reactions.
   no socket and spawning no process.
 - **verify:**
   ```bash
+  python -m pip install -q pytest
   python -m pytest tests/test_responder.py -q
   RESPONDER_DISABLE_IO=1 python responder.py --once --dry-run
   ```
@@ -310,6 +314,7 @@ correctness bug, not just noise.
   all three channel ids, the two reaction emoji and `connections:write`.
 - **verify:**
   ```bash
+  python -m pip install -q pytest
   python -m pytest tests/ -q
   pwsh tests/parse-ps1.ps1
   grep -q 'C0BQK5RUXL2' README.md

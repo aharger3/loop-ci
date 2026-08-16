@@ -246,7 +246,7 @@ a body returning exit code 3 is treated as clean and is not retried.
 
 
 ### T5 -- notify.py demoted to alarms on ntfy topic aharg-nw
-- model: deepseek
+- model: glm
 
 `notify.py` currently owns three conditions and posts them to `aharg-loop` at the end of
 every night. T3 takes over the reporting job, so notify keeps only the case where the
@@ -279,7 +279,7 @@ than deleting the coverage outright.
 
 
 ### T6 -- The vault markdown mirror actually gets written and committed
-- model: deepseek
+- model: glm
 
 `worker.ps1` defines `$VaultLog = "C:\Users\aharg\Austin's Vault\Areas\Daily\night-log.md"`
 and the file has never once appeared in the vault - the whole `Areas/Daily/` folder stops at
@@ -311,7 +311,7 @@ shows exactly one new commit.
 
 
 ### T7 -- Stop the 09:00 trigger reporting a false failure
-- model: deepseek
+- model: glm
 
 `\NightWorker` has both a 09:00 daily trigger and an at-startup trigger, with
 `MultipleInstances IgnoreNew`. When the box has not rebooted, the startup instance is still
@@ -327,6 +327,14 @@ next person reading a task history knows what it meant historically.
 
 The script must stay idempotent - re-running it re-registers cleanly over an existing task,
 which is how it gets deployed.
+
+**`tests/parse-ps1.ps1` must be edited in this row too.** The previous attempt failed here:
+the gate parses only `worker.ps1` and `supervisor.ps1`, printed "parses clean" for both and
+still exited 1, and never looked at `register-tasks.ps1` at all. Rewrite it to glob **every
+`.ps1` in the repository** (`Get-ChildItem -Recurse -Filter *.ps1`), parse each with the real
+`[System.Management.Automation.Language.Parser]`, print one line per file, and `exit 1` only
+when a file actually has parse errors - and `exit 0` otherwise. An exit code that does not
+match the printed result is the bug being fixed.
 
 Do not add, remove, or reschedule any other task. No cron, no new schedule.
 
