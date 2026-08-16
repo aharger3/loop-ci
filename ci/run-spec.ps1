@@ -197,6 +197,60 @@ function Trim-Tail($s, $n) {
   return '...' + $s.Substring($s.Length - $n)
 }
 
+# --- capability wiring: MCP servers, plugins, settings, from the TARGET repo ---------------
+#
+# The runner is a bare `claude -p` on a fresh ubuntu box: no ~/.claude, so no plugins, no
+# skills, no MCP servers, no hooks. That was fine while every row was "edit files, exit 0",
+# and it stops being fine the moment a row needs a tool call the model does not ship with.
+#
+# The fix is NOT to install a home directory on the runner - that would make the CI agent's
+# behaviour depend on a machine nobody can read. It is to let the TARGET REPO declare its own
+# capabilities, in files that are committed next to the code they act on. Every switch below
+# is inert when its file is absent, so a repo that needs none of this is byte-for-byte
+# unaffected and no existing spec changes behaviour.
+#
+# Loaded automatically by Claude Code from $WorkDir, needing no flag at all:
+#   .claude/skills/    project skills
+#   .claude/agents/    project subagents
+#   CLAUDE.md          project rules (already relied on - this is loop-ci/CLAUDE.md's cousin)
+#
+# Needing a flag, because CI has nobody to answer a trust prompt:
+$claudeArgs = @()
+
+# MCP. `.mcp.json` at a repo root is the standard location, but Claude Code asks for approval
+# before loading it and there is no human here to approve - so it is passed explicitly with
+# --mcp-config, and --strict-mcp-config guarantees NOTHING else can sneak in from a global
+# config we do not control. `.claude/mcp.ci.json` wins when present, for the case where the
+# CI server set differs from the one Austin uses interactively (no local-only stdio servers,
+# no servers that would prompt for an OAuth login the runner cannot complete).
+$mcpFile = @("$WorkDir/.claude/mcp.ci.json", "$WorkDir/.mcp.json") | Where-Object { Test-Path $_ } | Select-Object -First 1
+if ($mcpFile) {
+  $claudeArgs += @('--mcp-config', $mcpFile, '--strict-mcp-config')
+  Write-Host "mcp: loading $([IO.Path]::GetFileName($mcpFile)) (strict)"
+}
+
+# Settings. Env-var interpolation in an MCP config reads from the process environment, which
+# is exactly where run-spec.ps1 has already put the tier's key - so a repo can hand its MCP
+# servers a token without ever committing one. Anything settings.json can set (permissions,
+# env, statusLine) is available here; note that permissions are largely moot under
+# --permission-mode bypassPermissions, which is deliberate for an unattended runner.
+if (Test-Path "$WorkDir/.claude/settings.ci.json") {
+  $claudeArgs += @('--settings', "$WorkDir/.claude/settings.ci.json")
+  Write-Host "settings: loading .claude/settings.ci.json"
+}
+
+# Plugins. One --plugin-dir per directory under .claude/plugins/. This is the escape hatch for
+# a capability that is genuinely shared across specs; a plugin that only one repo uses is
+# better expressed as a skill in .claude/skills/, which needs no flag and no wiring.
+if (Test-Path "$WorkDir/.claude/plugins") {
+  foreach ($d in Get-ChildItem "$WorkDir/.claude/plugins" -Directory) {
+    $claudeArgs += @('--plugin-dir', $d.FullName)
+    Write-Host "plugin: $($d.Name)"
+  }
+}
+
+if (-not $claudeArgs.Count) { Write-Host "no .claude capability config in target repo - bare runner" }
+
 $ordered = TopoOrder $plan.tasks
 
 if ($DryRun) {
@@ -441,7 +495,7 @@ This file is how your row speaks for itself. Nothing downstream re-summarises yo
       [IO.File]::WriteAllText($inFile, $prompt, (New-Object Text.UTF8Encoding($false)))
 
       $p = Start-Process -FilePath 'claude' -PassThru -NoNewWindow `
-            -ArgumentList @('-p','--model',$cfg.model,'--permission-mode','bypassPermissions') `
+            -ArgumentList (@('-p','--model',$cfg.model,'--permission-mode','bypassPermissions') + $claudeArgs) `
             -WorkingDirectory $WorkDir `
             -RedirectStandardInput $inFile `
             -RedirectStandardOutput $outFile -RedirectStandardError $errFile

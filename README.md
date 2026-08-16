@@ -103,6 +103,35 @@ was the one pressed, and it deep-links into the GitHub mobile app and lands on a
 **Every line in the notification is `plain`, not `resultLine`** — the row's own jargon-free
 sentence. Nothing re-summarises; N rows, N voices.
 
+## Giving a row tools: MCP servers, skills, subagents, plugins
+
+The runner is a bare `claude -p` on a fresh Ubuntu box — no `~/.claude`, so
+nothing from a laptop comes along. Capabilities are declared by the **target
+repo**, committed next to the code they act on. Every one is optional; a repo
+with none behaves exactly as before.
+
+| Put this in the target repo | Effect | Flag used |
+|---|---|---|
+| `CLAUDE.md` | project rules the row must follow | none (auto) |
+| `.claude/skills/<name>/SKILL.md` | a skill the row can invoke | none (auto) |
+| `.claude/agents/<name>.md` | a subagent the row can spawn | none (auto) |
+| `.mcp.json` *or* `.claude/mcp.ci.json` | MCP servers / tool calls | `--mcp-config … --strict-mcp-config` |
+| `.claude/settings.ci.json` | env, permissions, config | `--settings` |
+| `.claude/plugins/<dir>/` | a full plugin | `--plugin-dir` (one per dir) |
+
+**Skills first, plugins last.** A skill is a markdown file with no wiring and no
+flag; reach for a plugin only when the capability is genuinely shared across
+repos.
+
+**`.claude/mcp.ci.json` overrides `.mcp.json`** when both exist — use it when the
+CI server set must differ from the interactive one (drop stdio servers that need
+a local binary, or any server that would demand an OAuth login no runner can
+complete). `--strict-mcp-config` means only that file is ever loaded.
+
+**Tokens for MCP servers**: use `${VAR}` interpolation in the config and add the
+secret to the `Execute` step's `env:` block in `.github/workflows/loop.yml`.
+Never commit a key.
+
 ## Secrets
 
 | secret | for |
