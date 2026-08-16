@@ -96,7 +96,7 @@ whose stderr says `Video unavailable` returns `False` after exactly one call.
 
 ### T2 -- Stop re-burning the videos that already failed five ways
 
-- model: deepseek
+- model: glm
 - depends-on: T1
 
 Stage C resumes by reading `corpus_frames.jsonl` and skipping any video that already has a
@@ -137,7 +137,7 @@ a success removes the row; `--retry-failed` processes an exhausted video anyway.
 
 ### T3 -- One way for the night to say it is stuck
 
-- model: deepseek
+- model: glm
 
 Settled this round: blockers go to **ntfy topic `aharg-loop`**, the same topic loop-ci already
 pushes to and that is already on Austin's phone. Not Remote Control - pairing is unconfirmed
@@ -219,7 +219,7 @@ gate rather than a grep.
 
 ### T5 -- Repo hygiene, so the first push does not leak a key or 300 MB
 
-- model: deepseek
+- model: glm
 
 `Desktop\ops\night\` becomes `aharger3/night-worker`, and it currently holds a live API key and
 about 350 MB of scratch. Write `.gitignore` first, before anything else in this row.
