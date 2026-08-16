@@ -181,6 +181,12 @@ markdown to the path given by `--out` (the worker passes the vault path). A Slac
 must not stop the file being written, and neither failure may return non-zero - a broken
 report must never mark a good night as failed.
 
+**The written markdown must open with YAML frontmatter carrying `thread_ts:` (the `ts`
+`slack.post()` returned), `channel:` and `date:`.** This is the whole read-back path: the
+Slack thread is where Austin answers, and the only way a later Claude session or cloud
+routine knows *which* thread to call `slack_read_thread` on is this line. If the post
+failed, write `thread_ts: null` rather than omitting the key.
+
 `--dry-run` prints the rendered message to stdout and posts nothing.
 
 Write `tests/test_brief.py` against a synthetic two-night `night-log.jsonl` fixture,
@@ -195,6 +201,7 @@ are numbered.
   ```bash
   python -m pytest tests/test_brief.py -q
   NW_SLACK_DISABLE=1 python brief.py --log tests/fixtures/two-night-log.jsonl --dry-run
+  grep -q 'thread_ts' brief.py
   ```
 
 
