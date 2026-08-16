@@ -1,6 +1,6 @@
 # RESPONDER 0.1.0 - One daemon, a persona per Slack channel, instant replies
 
-status: ready
+status: done
 version: responder-0.1.0
 repo: aharger3/responder
 doc: Projects/agents/agent-hosting.md
@@ -62,7 +62,7 @@ Bot user is `vault_agents`; the token is in `.slack-token` beside the code, alre
 gitignored. Never print it, never put it in a log line or an error message.
 
 
-### T1 -- slackio.py: the transport, with the read receipt
+### [x] T1 -- slackio.py: the transport, with the read receipt
 - model: deepseek
 
 New `slackio.py`. Stdlib only (`urllib`, `json`, `os`, `time`). Every Slack call goes
@@ -105,7 +105,7 @@ retried and then succeeds; `RESPONDER_DISABLE_IO=1` opens no socket.
   ```
 
 
-### T2 -- personas.py plus the three agent markdown files
+### [x] T2 -- personas.py plus the three agent markdown files
 - model: deepseek
 
 New `personas.py` and a new `agents/` directory holding `night-worker.md`, `omen.md`,
@@ -198,7 +198,7 @@ returns `None`; empty stdout returns `None`; an over-long reply is truncated.
   ```
 
 
-### T4 -- responder.py: the loop that ties it together
+### [x] T4 -- responder.py: the loop that ties it together
 - model: glm
 - depends-on: T1, T2, T3
 
@@ -286,7 +286,7 @@ the real PowerShell parser and fail on any error.
   ```
 
 
-### T6 -- README and the one thing Austin has to do himself
+### [x] T6 -- README and the one thing Austin has to do himself
 - model: deepseek
 - depends-on: everything
 
