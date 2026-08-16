@@ -348,7 +348,7 @@ Do not add, remove, or reschedule any other task. No cron, no new schedule.
 
 
 ### T8 -- Delete the dead scratch scripts and document the run
-- model: deepseek
+- model: glm
 - depends-on: everything
 
 The 2026-08-15 debugging session left 26 one-shot probes in the repo root - `_omni2.ps1`
@@ -363,6 +363,12 @@ Delete every file matching `_*.ps1` in the repo root. For the loose `.py` probes
 name across the surviving files first and delete only the ones nothing references - report
 any you kept and why. Add `night-log*.jsonl` to `.gitignore` so a 209 MB spin log can never
 be committed.
+
+**The previous attempt failed this row on a silent `grep -q`.** The verify below requires
+four literal strings to exist, so put them there deliberately rather than hoping the prose
+happens to contain them: `README.md` must contain `qwen2.5vl:3b`, `#night-worker` and
+`aharg-nw`, and `.gitignore` must contain a `night-log` pattern. Check each with grep
+yourself before finishing.
 
 Then update `README.md` to describe what 0.5.0 actually is: three stages, local-first
 vision with a cloud fallback, self-healing stage supervisor, one Slack report at 08:00,
