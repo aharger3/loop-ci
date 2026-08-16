@@ -73,7 +73,7 @@ repo root by `src/index.js` at the end of every run, success or failure:
 Both T3 and T4 depend on that exact shape. Neither may change it.
 
 
-### T1 -- Parse the real posting time and window against the last successful run
+### [x] T1 -- Parse the real posting time and window against the last successful run
 - model: opus
 
 `src/breakdowns.js` is where the bot goes blind. Rewrite the date handling.
@@ -125,7 +125,7 @@ Cover at minimum:
   ```
 
 
-### T2 -- Give CI a memory: commit the dedup log and the watermark back to the repo
+### [x] T2 -- Give CI a memory: commit the dedup log and the watermark back to the repo
 
 Right now `.gitignore` hides `submissions_log.json`, so every CI run starts
 amnesiac and `isAlreadySubmitted` is dead code.
@@ -169,7 +169,7 @@ fail the job on an empty commit.
   ```
 
 
-### T3 -- Add --dry-run and --limit, and write run-summary.json every run
+### [x] T3 -- Add --dry-run and --limit, and write run-summary.json every run
 - model: glm
 
 `submit.js` has not executed a single submission since the June rewrite, because
