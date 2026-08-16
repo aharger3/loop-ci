@@ -54,6 +54,30 @@ Two dialects, both legal:
 Three attempts per row. Attempt 2 and 3 are handed the verify command's real stderr,
 so a retry is a bug-fix pass, not a re-roll.
 
+### `tools:` — declare an external capability AT PLAN TIME, not at 2am
+
+A row that needs to read Gmail, hit a calendar, or call any service the model does
+not ship with must say so in the spec:
+
+```markdown
+- tools: gmail, slack
+```
+
+This is a **planning-time flag, not a runtime switch.** It changes nothing about
+how the row executes; it exists so `/plan` surfaces the question while Austin is
+still in the conversation — *"T3 needs Gmail read access; is that in scope, and
+which account?"* — instead of the row discovering it has no hands halfway through
+an unattended run and burning three attempts failing.
+
+The rule for `/plan`: **before writing a row, ask whether its work can be done with
+files and shell alone. If not, name the capability in `tools:` and raise it as an
+Agent Question in the same breath.** A spec that reaches the runner with an
+undeclared tool need is a planning failure, not a runner failure.
+
+Once a capability is agreed, wiring it is the "Giving a row tools" section below:
+an MCP server in `.mcp.json` / `.claude/mcp.ci.json`, its token added to the
+`Execute` step's `env:`, and the secret set on the repo.
+
 ## Models
 
 One binary, three env blocks. DeepSeek and Z.ai both publish Anthropic-compatible endpoints
@@ -118,6 +142,17 @@ with none behaves exactly as before.
 | `.mcp.json` *or* `.claude/mcp.ci.json` | MCP servers / tool calls | `--mcp-config … --strict-mcp-config` |
 | `.claude/settings.ci.json` | env, permissions, config | `--settings` |
 | `.claude/plugins/<dir>/` | a full plugin | `--plugin-dir` (one per dir) |
+
+**The shared kit arrives automatically.** Before the model starts, the run job
+sparse-clones the vault's committed `.claude/` and rsyncs `skills/`, `agents/` and
+`plugins/` into the target repo's working tree with `--ignore-existing`. So a skill
+Austin writes once is available to every spec in every repo, and a repo that ships
+its own skill of the same name wins. The staged copies are added to
+`.git/info/exclude`, so they never appear in the PR.
+
+This is the piece Syncthing cannot do: it keeps two laptops in step, but has no
+daemon on a GitHub runner. **Git is the only carrier that reaches laptops, cloud
+routines and CI alike, so the vault's `.claude/` is the single source of truth.**
 
 **Skills first, plugins last.** A skill is a markdown file with no wiring and no
 flag; reach for a plugin only when the capability is genuinely shared across

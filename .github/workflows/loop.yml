@@ -177,6 +177,39 @@ jobs:
 
       - run: npm i -g @anthropic-ai/claude-code
 
+      # THE SHARED BRAIN. Syncthing keeps Austin's two laptops carrying the same
+      # ~/.claude/skills; it cannot reach a GitHub runner or a cloud routine, because neither
+      # has a home directory or a Syncthing daemon. Git can reach all four.
+      #
+      # So the vault's committed `.claude/` is the single source, and it is STAGED INTO the
+      # target repo's working tree here, before the model starts. Claude Code auto-loads
+      # `.claude/skills/` and `.claude/agents/` from its working directory, so no flag is
+      # needed and a skill behaves identically in CI and on the desk.
+      #
+      # --ignore-existing, never --delete: a target repo that ships its OWN skill of the same
+      # name wins. The shared kit is a floor, not an override, and this step can never remove
+      # a file the repo committed.
+      - name: Stage the shared skill/agent kit from the vault
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.LOOP_GH_TOKEN }}
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse \
+            "https://x-access-token:$GH_TOKEN@github.com/aharger3/obsidian-vault.git" kit
+          cd kit && git sparse-checkout set .claude && cd ..
+          for d in skills agents plugins; do
+            [ -d "kit/.claude/$d" ] || continue
+            mkdir -p "work/.claude/$d"
+            rsync -a --ignore-existing "kit/.claude/$d/" "work/.claude/$d/"
+            echo "staged $d: $(ls "work/.claude/$d" | tr '\n' ' ')"
+            # The staged kit must NEVER end up in the PR - it is scaffolding, not work, and a
+            # `git add -A` later in this job would otherwise commit the vault's skills into
+            # tradingbot. .git/info/exclude is local to this checkout and is not itself a
+            # tracked file, so this leaves no trace in the diff.
+            printf '/.claude/%s/\n' "$d" >> work/.git/info/exclude
+          done
+          rm -rf kit
+
       # The runner shipped the Claude CLI and nothing else, so any row whose verify is
       # "python X.py exits 0" failed on a missing import rather than on its own logic. Non-fatal
       # by design: a target repo with no requirements.txt, or a dep that will not install, must
