@@ -1,6 +1,6 @@
 # NIGHT-WORKER 0.4.0 - unblock stage C throughput
 
-status: ready
+status: done
 version: night-worker-0.4.0
 repo: aharger3/night-worker
 doc: Projects/night-worker.md
@@ -94,7 +94,7 @@ whose stderr says `Video unavailable` returns `False` after exactly one call.
   ```
 
 
-### T2 -- Stop re-burning the videos that already failed five ways
+### [x] T2 -- Stop re-burning the videos that already failed five ways
 
 - model: glm
 - depends-on: T1
@@ -135,7 +135,7 @@ a success removes the row; `--retry-failed` processes an exhausted video anyway.
   ```
 
 
-### T3 -- One way for the night to say it is stuck
+### [x] T3 -- One way for the night to say it is stuck
 
 - model: glm
 
@@ -175,7 +175,7 @@ exits 0 **without opening a socket**. That is what the runner checks.
   ```
 
 
-### T4 -- Make the 09:00 worker actually run stage C
+### [x] T4 -- Make the 09:00 worker actually run stage C
 
 - model: glm
 - depends-on: T3
@@ -217,7 +217,7 @@ gate rather than a grep.
   ```
 
 
-### T5 -- Repo hygiene, so the first push does not leak a key or 300 MB
+### [x] T5 -- Repo hygiene, so the first push does not leak a key or 300 MB
 
 - model: glm
 
