@@ -1,6 +1,6 @@
 # NIGHT-WORKER 0.5.0 - Cut the cloud, heal itself, report once to Slack
 
-status: ready
+status: done
 version: night-worker-0.5.0
 repo: aharger3/night-worker
 doc: Projects/night-worker.md
@@ -347,7 +347,7 @@ Do not add, remove, or reschedule any other task. No cron, no new schedule.
   ```
 
 
-### T8 -- Delete the dead scratch scripts and document the run
+### [x] T8 -- Delete the dead scratch scripts and document the run
 - model: glm
 - depends-on: everything
 
