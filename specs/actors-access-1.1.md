@@ -1,6 +1,6 @@
 # ACTORS ACCESS 1.1 - Make the bot actually submit
 
-status: ready
+status: done
 version: actors-access-1.1
 repo: aharger3/Actors-Access-Automation
 doc: Projects/actors-access-bot.md
@@ -227,7 +227,7 @@ exactly one role from a list of three, and `limit` unset returns all.
   ```
 
 
-### T4 -- Replace failure-only Telegram with ntfy that shouts on a zero-submit run
+### [x] T4 -- Replace failure-only Telegram with ntfy that shouts on a zero-submit run
 - model: glm
 
 The reason a week of empty runs went unnoticed is that the only notification in
@@ -298,7 +298,7 @@ ntfy alerting in place of Telegram. Bump `package.json` version to `1.1.0`.
   ```
 
 
-### T6 -- Write the one-page checklist for Austin's live single-role proof
+### [x] T6 -- Write the one-page checklist for Austin's live single-role proof
 - model: glm
 - depends-on: everything
 
