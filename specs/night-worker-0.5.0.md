@@ -245,7 +245,7 @@ a body returning exit code 3 is treated as clean and is not retried.
   ```
 
 
-### T5 -- notify.py demoted to alarms on ntfy topic aharg-nw
+### [x] T5 -- notify.py demoted to alarms on ntfy topic aharg-nw
 - model: glm
 
 `notify.py` currently owns three conditions and posts them to `aharg-loop` at the end of
@@ -278,7 +278,7 @@ than deleting the coverage outright.
   ```
 
 
-### T6 -- The vault markdown mirror actually gets written and committed
+### [x] T6 -- The vault markdown mirror actually gets written and committed
 - model: glm
 
 `worker.ps1` defines `$VaultLog = "C:\Users\aharg\Austin's Vault\Areas\Daily\night-log.md"`
@@ -310,7 +310,7 @@ shows exactly one new commit.
   ```
 
 
-### T7 -- Stop the 09:00 trigger reporting a false failure
+### [x] T7 -- Stop the 09:00 trigger reporting a false failure
 - model: glm
 
 `\NightWorker` has both a 09:00 daily trigger and an at-startup trigger, with
