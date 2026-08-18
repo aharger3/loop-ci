@@ -44,7 +44,7 @@ target: Make the box run unattended for a full 23h from a launch at any hour - w
 - Slack channel is `C0BQK5RUXL2`; ntfy topic is `aharg-nw` and carries alarms only.
 
 
-### T1 -- Anytime-start window: `worker.ps1 -Until`
+### [x] T1 -- Anytime-start window: `worker.ps1 -Until`
 - model: glm
 
 `worker.ps1` today assumes it was started by the 09:00 trigger and computes its stop from
@@ -73,7 +73,7 @@ exactly 08:00/08:00 gives tomorrow 08:00. Exit 1 on any mismatch.
   ```
 
 
-### T2 -- One LLM call path: Ollama first, OmniRoute second, Gemini gone
+### [x] T2 -- One LLM call path: Ollama first, OmniRoute second, Gemini gone
 - model: glm
 
 Model calls are scattered - `stagec.py` has `ollama_vision()` and `gemini()`, `worker.ps1`
@@ -121,7 +121,7 @@ falls to omni and logs `rung: omni`; both empty raises `LlmFailed`.
   ```
 
 
-### T3 -- The queue never drains: depth-first backlog with an overflow floor
+### [x] T3 -- The queue never drains: depth-first backlog with an overflow floor
 - model: glm
 
 The night can currently run out of work and spin. Build the supply.
@@ -167,7 +167,7 @@ the floor is exhausted.
   ```
 
 
-### T4 -- The 08:00 report always posts, with tappable numbered options
+### [x] T4 -- The 08:00 report always posts, with tappable numbered options
 - model: glm
 - depends-on: T3
 
@@ -217,7 +217,7 @@ written markdown contains `thread_ts:` and three `options:` entries.
   ```
 
 
-### T5 -- 09:00: read the tap, read the thread, or assume option 1
+### [x] T5 -- 09:00: read the tap, read the thread, or assume option 1
 - model: opus
 - depends-on: T4
 
@@ -263,7 +263,7 @@ assumed), and the missing-brief case.
   ```
 
 
-### T6 -- Hard blocks interrupt the day; nothing else does
+### [x] T6 -- Hard blocks interrupt the day; nothing else does
 - model: glm
 
 Create `blocks.py` exporting `raise_block(kind, detail)` and the classifier that decides
