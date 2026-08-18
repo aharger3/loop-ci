@@ -23,7 +23,7 @@ Context the runner needs, because none of it is in the repo:
 
 ---
 
-### T1 -- Direct PrizePicks + Underdog line feeds
+### [x] T1 -- Direct PrizePicks + Underdog line feeds
 
 - model: glm
 
@@ -70,7 +70,7 @@ Odds API devigged consensus but use the app's real line. Odds API stays the sour
 
 ---
 
-### T2 -- Kill the silent-success bug
+### [x] T2 -- Kill the silent-success bug
 
 - model: glm
 
@@ -108,7 +108,7 @@ exact chain by which a failed Odds API request became `credits: null, rows: []` 
 
 ---
 
-### T3 -- OddsJam-style dark board
+### [x] T3 -- OddsJam-style dark board
 
 - model: glm
 
@@ -144,7 +144,7 @@ served by Flask.
 
 ---
 
-### T4 -- One-click Go: deep link + clipboard
+### [x] T4 -- One-click Go: deep link + clipboard
 
 - model: glm
 
@@ -181,7 +181,7 @@ showing the text in a selectable box — the button must never do nothing.
 
 ---
 
-### T5 -- Manufactured-spend venue board
+### [x] T5 -- Manufactured-spend venue board
 
 - model: deepseek
 
@@ -249,7 +249,7 @@ where he has been physically.
 
 ---
 
-### T7 -- EV guardrails: implausible-EV band, Kelly clamp, secret
+### [x] T7 -- EV guardrails: implausible-EV band, Kelly clamp, secret
 
 - model: opus
 
