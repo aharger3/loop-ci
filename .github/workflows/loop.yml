@@ -283,11 +283,21 @@ jobs:
           git push -u origin HEAD
           PR_URL=$(gh pr create --fill --title "loop: ${{ matrix.version }}" \
             --body "Automated run. See ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+          # Two specs pointing at the SAME target repo merge concurrently: the second PR is
+          # behind main by the time it is squashed and `gh pr merge` exits non-zero. Under
+          # bash -e that killed the whole step, so the jq line below never stamped resultUrl
+          # and the notification lost its PR link. Retry after refreshing the branch, and
+          # treat a final failure as "not merged" rather than as a dead step.
+          MERGED=0
           if [ "$DONE" -gt 0 ]; then
-            gh pr merge "$PR_URL" --squash --delete-branch && echo "MERGED=1" >> "$GITHUB_ENV"
-          else
-            echo "MERGED=0" >> "$GITHUB_ENV"
+            for i in 1 2 3; do
+              if gh pr merge "$PR_URL" --squash --delete-branch; then MERGED=1; break; fi
+              gh pr update-branch "$PR_URL" >/dev/null 2>&1 || true
+              sleep $((i * 5))
+            done
+            [ "$MERGED" = 1 ] || echo "::warning::$PR_URL did not merge after 3 tries - another loop run in the same repo probably landed first; its rows stay unchecked and re-run next push"
           fi
+          echo "MERGED=$MERGED" >> "$GITHUB_ENV"
           jq --arg u "$PR_URL" '.resultUrl = $u' "../result-${{ matrix.version }}.json" > /tmp/r.json
           mv /tmp/r.json "../result-${{ matrix.version }}.json"
 
@@ -296,19 +306,26 @@ jobs:
       - name: Check off the rows that passed verify
         if: env.MERGED == '1'
         run: |
-          pwsh ci/checkoff.ps1 -Spec "specs/${{ matrix.spec }}" -Result "result-${{ matrix.version }}.json"
-          [ -z "$(git status --porcelain specs/)" ] && { echo "spec unchanged"; exit 0; }
           git config user.name  "the-loop"
           git config user.email "loop@austinharger.com"
-          git add specs/
-          git commit -m "loop: check off verified rows in ${{ matrix.version }} [skip ci]"
-          # Two specs finishing at once both push to main; the loser rebases and retries.
-          for i in 1 2 3; do
-            git pull --rebase --autostash origin main >/dev/null 2>&1 || true
+          # Two specs finishing at once both push [x] to main. The old loop did
+          # `pull --rebase --autostash || true` and pushed regardless: a CONFLICTING rebase
+          # left the repo mid-rebase with HEAD at a partially applied commit, all three
+          # pushes then failed against that state, and in the worst case HEAD:main pushed a
+          # half-rebased tree. checkoff.ps1 is idempotent (it only ever inserts a missing
+          # [x]), so the safe shape is reset-to-origin, re-apply, push - never rebase.
+          for i in 1 2 3 4 5; do
+            git fetch --quiet origin main
+            git reset --quiet --hard origin/main
+            pwsh ci/checkoff.ps1 -Spec "specs/${{ matrix.spec }}" -Result "result-${{ matrix.version }}.json"
+            [ -z "$(git status --porcelain specs/)" ] && { echo "spec unchanged"; exit 0; }
+            git add specs/
+            git commit -q -m "loop: check off verified rows in ${{ matrix.version }} [skip ci]"
             git push origin HEAD:main && exit 0
-            sleep 5
+            echo "check-off push lost the race, re-applying on top of main"
+            sleep $((i * 3))
           done
-          echo "::warning::could not push the spec check-off after 3 tries"
+          echo "::warning::could not push the spec check-off after 5 tries"
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -392,18 +409,27 @@ jobs:
         run: |
           set -e
           git clone --depth 1 "https://x-access-token:$GH_TOKEN@github.com/aharger3/obsidian-vault.git" vault
-          pwsh ci/vault-sync.ps1 -Results results -VaultDir vault -DocOut vault-doc.txt
-          cd vault
-          if [ -z "$(git status --porcelain)" ]; then echo "vault already current"; exit 0; fi
-          git config user.name the-loop && git config user.email loop@austinharger.com
-          git add -A && git commit -m "loop: run summary"
+          cd vault && git config user.name the-loop && git config user.email loop@austinharger.com && cd ..
           # Straight to main. This is markdown that was squash-merged on sight anyway.
           # 2026-08-08 (omen-3.7): this push died with "failed to push some refs" and NOBODY
           # heard about it - continue-on-error swallowed the step and the notification silently
           # lost its Results button, so the doc stayed stale, which is the exact complaint this
           # step exists to answer. Retry, then say so out loud.
-          for i in 1 2 3; do
-            git pull --rebase --autostash origin main >/dev/null 2>&1 || true
+          # Same race as the check-off, and worse: two concurrent runs whose specs name the
+          # SAME `doc:` note edit the same lines, so `pull --rebase` conflicts, `|| true`
+          # swallows it, and the note silently never updates. vault-sync.ps1 is idempotent -
+          # the run block is replaced in place, bullets dedupe on exact text, and an already
+          # struck line is skipped - so re-applying on a fresh origin/main is safe and is
+          # the only shape that survives a conflicting sibling run.
+          for i in 1 2 3 4 5; do
+            (cd vault && git fetch --quiet --depth 1 origin main && git reset --quiet --hard origin/main)
+            pwsh ci/vault-sync.ps1 -Results results -VaultDir vault -DocOut vault-doc.txt
+            cd vault
+            if [ -n "$(git status --porcelain)" ]; then
+              git add -A && git commit -q -m "loop: run summary"
+            elif [ $i -eq 1 ]; then
+              echo "vault already current"; exit 0
+            fi
             if git push origin HEAD:main; then
               DOC=$(cat ../vault-doc.txt 2>/dev/null || true)
               if [ -n "$DOC" ]; then
@@ -416,7 +442,9 @@ jobs:
               fi
               exit 0
             fi
-            sleep 5
+            cd ..
+            echo "vault push lost the race, re-applying on top of main"
+            sleep $((i * 3))
           done
           echo "VAULT_STALE=1" >> "$GITHUB_ENV"
           echo "::warning::vault summary could not be pushed after 3 tries"
