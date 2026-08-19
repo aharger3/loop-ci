@@ -64,7 +64,7 @@ rows fighting over one document.
 ```
 
 
-### T1 -- Rewrite SKILL.md as the v0.3 spine
+### [x] T1 -- Rewrite SKILL.md as the v0.3 spine
 - model: glm
 
 Rewrite `.claude/skills/curate/SKILL.md`. Keep the existing frontmatter `name: curate` and
@@ -105,7 +105,7 @@ routine, linking `references/hosting-env.md`.
   grep -q "PM2_ENV_ALLOW" .claude/skills/curate/SKILL.md
   ```
 
-### T2 -- Write references/research.md - the curator answers its own findable questions
+### [x] T2 -- Write references/research.md - the curator answers its own findable questions
 - model: glm
 
 Create `.claude/skills/curate/references/research.md`.
@@ -138,7 +138,7 @@ It defines the research step. The contract:
   grep -q "🔬" .claude/skills/curate/references/research.md
   ```
 
-### T3 -- Write references/spec-draft.md - the output that makes this project worth having
+### [x] T3 -- Write references/spec-draft.md - the output that makes this project worth having
 - model: glm
 
 Create `.claude/skills/curate/references/spec-draft.md`.
@@ -221,7 +221,7 @@ Rules the file must state:
   grep -qi "night-worker" .claude/skills/curate/references/brief.md
   ```
 
-### T5 -- Write references/readback.md - fold Slack answers into the notes
+### [x] T5 -- Write references/readback.md - fold Slack answers into the notes
 - model: glm
 
 Create `.claude/skills/curate/references/readback.md`.
@@ -258,7 +258,7 @@ Also state the failure this closes: `last_dispatch_ts` has held a real timestamp
   grep -q "\[x\]" .claude/skills/curate/references/readback.md
   ```
 
-### T6 -- Write references/hosting-env.md - the routine and its environment
+### [x] T6 -- Write references/hosting-env.md - the routine and its environment
 - model: deepseek
 
 Create `.claude/skills/curate/references/hosting-env.md`.
