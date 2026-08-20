@@ -5,7 +5,7 @@ version: night-worker-0.6.0
 repo: aharger3/night-worker
 doc: Projects/night-worker.md
 
-target: Make the box run unattended for a full 23h from a launch at any hour - work never runs out, every model call has an OmniRoute rung under it, the 08:00 report always fires and carries tappable numbered options, silence by 09:00 picks the recommendation itself, and only a block a physical agent genuinely cannot clear interrupts the day.
+target: Make the box run unattended and make a short night impossible to miss -  for a full 23h from a launch at any hour - work never runs out, every model call has an OmniRoute rung under it, the 08:00 report always fires and carries tappable numbered options, silence by 09:00 picks the recommendation itself, and only a block a physical agent genuinely cannot clear interrupts the day.
 
 ## Settled in the 2026-08-18 grilling - never re-elicit
 
@@ -306,19 +306,101 @@ failure produces no notification at all.
   ```
 
 
+### T8 -- A short night is a failure, no matter what the exit code says
+
+- model: glm
+- depends-on: T3, T4
+
+Measured on the box 2026-08-20, from `night-log.jsonl` worker start/stop pairs:
+
+| Night | Ran for |
+|---|---|
+| 08-17 | 6h 09m |
+| 08-18 | 2h 36m |
+| 08-19 | 6m |
+| 08-20 | **30 seconds** |
+
+Every one of those runs exited 0, and `\NightWorker` reports `LastTaskResult 0`, State
+`Ready`. The 08-20 run announced a 23-hour window, skipped all 217 already-done caption
+rows, hit `stagec-drained`, and quit in thirty seconds. Nothing anywhere measures how long
+the worker ran, so an idle night and a full night are the same green tick on every surface
+that watches this system.
+
+T3's overflow floor stops the box going idle. **This task makes it impossible for that
+failure to ever again be invisible**, which is the separate and more important half.
+
+**Measure the run.** `worker.ps1` already logs `stage=worker state=start` with
+`detail="stop at <ISO>"` and a matching `state=stop`. On exit, compute
+`ran_seconds = stop - start` and `window_seconds = until - start`, and write one final
+line:
+
+```json
+{"stage":"worker","state":"summary","ran_seconds":<int>,"window_seconds":<int>,"rows_ok":<int>,"rows_failed":<int>}
+```
+
+Emit it from a `finally` block so it is written even when the worker throws. A run with no
+`summary` line is itself the alarm.
+
+**The floor.** `NW_MIN_RUN_FRACTION`, default **0.25**. A run is SHORT when
+`ran_seconds < window_seconds * NW_MIN_RUN_FRACTION`, with an absolute floor of 900 seconds
+so a deliberate short window is not permanently short. A fraction of the window, not a
+fixed duration, because T2's anytime-start means the window is 2h some days and 23h others.
+
+**A SHORT night is a hard block.** It routes through T6's block path with kind `idle`,
+which means it pushes to `aharg-nw` the moment it is detected rather than waiting for
+08:00. This is the one alarm that must not wait, because a short night means the next
+23 hours are already being wasted.
+
+**The report leads with it.** T4's header line becomes:
+
+```
+Night Worker  <YYYY-MM-DD>  ran <Nh Nm> of <Nh Nm>   <rows_ok>/<rows_failed>
+```
+
+and when the night was SHORT, the line directly under the header is:
+
+```
+SHORT NIGHT - ran <Nh Nm> of a <Nh Nm> window. Queue drained at <stage>.
+```
+
+That line goes above `done:`, above `broke:`, above everything. It is the single most
+important fact the report can carry and it must never be below the fold.
+
+**Backfill the history.** Add `nw_runlog.py` with `run_spans(path)` returning
+`(start, stop, ran_seconds)` per worker start/stop pair in an existing `night-log.jsonl`,
+so the trend above can be recomputed on demand rather than reconstructed by hand next time.
+
+Add `tests/test_runfloor.py`: a 30-second run inside a 23-hour window is SHORT; a 6-hour
+run in the same window is not; a 20-minute run inside a 30-minute window is not SHORT
+because the 900-second absolute floor clears it; a log whose last worker pair has no
+`summary` line is reported as SHORT rather than skipped; `run_spans` returns 4 spans for a
+fixture holding 4 start/stop pairs.
+
+- **done-when:** `python -m pytest tests/test_runfloor.py -q` passes, and running
+  `python nw_runlog.py <fixture>` prints one line per span with its duration.
+- **verify:**
+  ```bash
+  python -m pytest tests/test_runfloor.py -q
+  grep -q 'NW_MIN_RUN_FRACTION' worker.ps1
+  grep -q 'ran_seconds' worker.ps1
+  grep -q 'SHORT NIGHT' brief.py
+  python -c "import nw_runlog; assert hasattr(nw_runlog,'run_spans')"
+  ```
+
+
 ### T7 -- Document 0.6.0 and prove the suite is green
 - model: deepseek
 - depends-on: everything
 
 Rewrite `README.md` for what 0.6.0 actually is. It must contain these literal strings, put
 there deliberately rather than hoped for: `-Until`, `discord_regrade`, `openrouter`,
-`aharg-nw`, `reactions.add`, `assumed`. Cover: the anytime-start window and the by-hand
+`aharg-nw`, `reactions.add`, `assumed`, `NW_MIN_RUN_FRACTION`. Cover: the anytime-start window and the by-hand
 launch line, the local-first / OmniRoute per-call ladder with Gemini removed, the six-tier
 queue with its overflow floor, the unconditional 08:00 report with tappable keycaps, the
 09:00 precedence (reaction, then digit reply, then assume 1), and the five block kinds.
 
 List the environment variables in one table: `NW_SLACK_TOKEN`, `NW_SLACK_CHANNEL`,
-`NW_SLACK_DISABLE`, `NW_NTFY_TOPIC`, `NW_NTFY_DISABLE`, `OPENROUTER_KEY`. `GEMINI_KEY` must
+`NW_SLACK_DISABLE`, `NW_NTFY_TOPIC`, `NW_NTFY_DISABLE`, `OPENROUTER_KEY`, `NW_MIN_RUN_FRACTION`. `GEMINI_KEY` must
 not appear anywhere.
 
 Then run the full suite and the PowerShell parse gate, and fix anything that fails rather
@@ -336,5 +418,6 @@ than reporting it.
   grep -q 'aharg-nw' README.md
   grep -q 'reactions.add' README.md
   grep -q 'assumed' README.md
+  grep -q 'NW_MIN_RUN_FRACTION' README.md
   test -z "$(grep -ril gemini_key . )"
   ```
