@@ -1,3 +1,10 @@
+> **FROZEN 2026-08-20 — archive only. Do not add specs here.**
+>
+> The runner and every spec now live in `aharger3/loop-local` (private); this
+> repo's contents are copied there under `archive/`. GitHub Actions was cut as
+> the runner because a run can finish green and never reach the Windows box
+> that runs the project. Nothing below is executed any more.
+
 # loop-ci
 
 The Loop, as a GitHub Action. **Push a spec into `specs/` and it runs.** That is the whole
