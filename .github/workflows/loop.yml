@@ -4,9 +4,11 @@ name: The Loop
 # No cron: Austin disabled every scheduled loop run on 2026-07-30 and asked more than once
 # that it stay that way. A push is a deliberate act, so this honours "runs are manual" while
 # removing the part that was actually work - opening a session and playing dispatcher.
+# RETIRED 2026-08-20. The push trigger is gone. Actions no longer runs specs --
+# Desktop\loop-local\dispatch.py on the Windows box does, because a run that finishes
+# on a runner and never reaches the box is not a finished run (defect 4, hit twice).
+# Kept dispatchable by hand only, so the history and the rig are not thrown away.
 on:
-  push:
-    paths: ['specs/**.md']
   workflow_dispatch:
     inputs:
       spec:
