@@ -128,13 +128,34 @@ prior_claimed_recall_pct: 0.0
 
 ### T3 -- Vision ladder: which tier can read a price level off a chart
 
-Build the sample: 200 image attachments drawn from `discord_data/images/`, stratified 100 from
+**An annotator already exists and it has been silently doing nothing since 2026-08-08.**
+`Desktop\Scripts\scarface_image_annotator.py` sets
+`IMAGES_DIR = ...\tradingbot\scarface_data\images` - **that directory does not exist.**
+`list_images()` therefore returns `[]`, and the log has read
+`START 0 images, 511 already done, 0 to do` on every run since (8/12, 8/14, 8/16, 8/19),
+each followed by `DONE`. It reports success while touching nothing. This is the same
+silent-fake-done failure as stage C's 685 fake frames, and it is the fourth instance in this
+project - it is exactly what the `error`-key done-guard exists to catch, and the guard does not
+catch this one because a no-op writes no rows at all. **Add a second guard: a stage that finds
+zero work must exit non-zero, not log DONE.**
+
+Its 511 existing annotations are real and worth keeping: median 561 chars, max 2,035, 462 of
+511 marked `readable`, 425 carrying a price-like number, and **zero `error` keys**. But they are
+`futures-alerts` 357 / `backtesting` 153 / `a-plus-setups` 1 - it ran alphabetically and stopped.
+**Not one image from jdub-alerts, scarface-alerts or premarket-charts has ever been read.**
+And the output is free prose, not a schema, so none of it joins to a backtest.
+
+First action of this row: point `IMAGES_DIR` at
+`C:\Users\aharg\Desktop\Projects\tradingbot\discord_data\images` (29,550 files), and make
+the zero-work case exit non-zero.
+
+Then build the sample: 200 image attachments drawn from `discord_data/images/`, stratified 100 from
 `jdub-alerts`, 60 from `scarface-alerts`, 40 from `premarket-charts`, chosen by the attachment
 references in those channels' json. Write the manifest to
 `research/vision_pilot_manifest.jsonl` (one row per image: `path`, `channel`, `msg_id`,
 `ts_utc`, `message_text`).
 
-Run all 200 through **four tiers**, same prompt each time, asking for strict JSON:
+Run all 200 through **five tiers**, same prompt each time, asking for strict JSON:
 `{ticker, direction, entry, stop, target, key_levels[], timeframe, confidence}` - and the model
 must return `null` for any field it cannot actually read off the chart. Guessing is the failure
 mode being tested for.
@@ -145,6 +166,7 @@ mode being tested for.
 | cheap | `qwen/qwen3.7-flash` | OpenRouter |
 | batch | `google/gemini-2.5-flash-lite:batch` | OpenRouter |
 | flash | `gemini-3.6-flash` | Google AI Studio, key `GOOGLE_AI_STUDIO_API_KEY` |
+| incumbent | `gemini/gemini-3.1-flash-lite` | local OmniRoute, the model the existing annotator already used |
 
 Provider pinning per the OpenRouter rules already in use. **The done-guard applies: an error
 response is never written into the results file** - drop it and count it as a failure for that
@@ -166,8 +188,9 @@ Close with a line `WINNER: <model>` naming the cheapest tier whose `price_in_ran
 least 80.
 
 - model: glm
-- **done-when:** all four tiers ran over the same 200 images, `vision_ladder.md` holds four
-  data rows plus a `WINNER:` line, and no row of the results jsonl carries an `error` key.
+- **done-when:** all five tiers ran over the same 200 images, `vision_ladder.md` holds five
+  data rows plus a `WINNER:` line, no row of the results jsonl carries an `error` key, and
+  `scarface_image_annotator.py` no longer points at a non-existent directory.
 - **verify:**
   ```bash
   cd /c/Users/aharg/Desktop/Projects/tradingbot
@@ -175,7 +198,10 @@ least 80.
   test $(wc -l < research/vision_pilot_manifest.jsonl) -eq 200
   test -s research/vision_ladder.md
   grep -q "price_in_range_pct" research/vision_ladder.md
-  test $(grep -cE "^\| ?(free|cheap|batch|flash) " research/vision_ladder.md) -eq 4
+  test $(grep -cE "^\| ?(free|cheap|batch|flash|incumbent) " research/vision_ladder.md) -eq 5
+  ! grep -q "scarface_data" /c/Users/aharg/Desktop/Scripts/scarface_image_annotator.py
+  grep -q "discord_data" /c/Users/aharg/Desktop/Scripts/scarface_image_annotator.py
+  grep -qE "sys\.exit\(|raise SystemExit" /c/Users/aharg/Desktop/Scripts/scarface_image_annotator.py
   grep -qE "^WINNER: .+" research/vision_ladder.md
   ! grep -l '"error"' research/vision_ladder_results_*.jsonl
   ```
