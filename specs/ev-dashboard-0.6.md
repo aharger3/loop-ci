@@ -54,7 +54,7 @@ key and no network and writes `latest.json` — it is the standard offline entry
 write a row that imports them.
 
 
-### T1 -- Re-enable the ntfy digest at +8%, one message per pull
+### [x] T1 -- Re-enable the ntfy digest at +8%, one message per pull
 - model: glm
 
 In `run.py`:
@@ -135,7 +135,7 @@ renders as `play-None`. It exits non-zero on failure and prints `render: ok` on 
   ```
 
 
-### T3 -- Real per-app state legality instead of the hardcoded "NC"
+### [x] T3 -- Real per-app state legality instead of the hardcoded "NC"
 - model: glm
 - depends-on: T1
 
@@ -218,7 +218,7 @@ Do not lower the market list; breadth of markets is what the DFS apps actually p
   ```
 
 
-### T5 -- clv.py: the tool that reads the 98,665 rows
+### [x] T5 -- clv.py: the tool that reads the 98,665 rows
 - model: glm
 
 98,665 `hist_lines` rows were bought to answer one question: **does a play this board would
