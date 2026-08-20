@@ -277,6 +277,12 @@ it, do not rewrite it), each exporting a jsonl on a Download button.
    and it is worthless if the grade leaks into the DOM - keep the answer out of the HTML
    entirely, in a separate `research/omen-5.2-blind-key.json`.
 
+**Austin marks these on a Mac or a phone, not on the Windows box.** Each deck must be a
+single self-contained HTML file - every bit of CSS and JS inline, all bar data embedded as
+JSON in a `<script>` tag, zero external `src=`/`href=` to any host, zero `fetch()`/`XHR`.
+No CDN charting library: draw the candles with inline canvas or SVG. A deck that loads
+anything over the network is unusable where he actually is.
+
 Both decks must survive a reload with marks intact. The 5.1 decks silently dropped every
 mark to a save-handler closure bug that wrote all 60 cards to one id - test explicitly that
 two different cards produce two different rows.
@@ -292,6 +298,7 @@ two different cards produce two different rows.
   python -c "import re,sys; h=open('research/omen-5.2-entry-deck.html',encoding='utf-8').read(); n=len(re.findall(r'data-card-id=', h)); sys.exit(0 if n==200 else 'entry deck cards: %d' % n)"
   python -c "import re,sys; h=open('research/omen-5.2-blind-deck.html',encoding='utf-8').read(); n=len(re.findall(r'data-card-id=', h)); sys.exit(0 if n==100 else 'blind deck cards: %d' % n)"
   python -c "import re,sys; h=open('research/omen-5.2-blind-deck.html',encoding='utf-8').read(); sys.exit('grade leaked into blind deck' if re.search(r'(data-grade|\"grade\"\s*:)', h) else 0)"
+  python -c "import re,sys,sys as s2; [s2.exit('external ref in %s' % f) for f in ['research/omen-5.2-entry-deck.html','research/omen-5.2-blind-deck.html'] if re.search(r'(src|href)\s*=\s*[\"\']https?://|fetch\s*\(|XMLHttpRequest', open(f,encoding='utf-8').read())]"
   ```
 
 ### T7 -- The verdict, and it is allowed to say no
