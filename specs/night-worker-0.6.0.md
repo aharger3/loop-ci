@@ -1,6 +1,6 @@
 # NIGHT-WORKER 0.6.0 - Never idle, always reports, taps not typing
 
-status: ready
+status: done
 version: night-worker-0.6.0
 repo: aharger3/night-worker
 doc: Projects/night-worker.md
@@ -306,7 +306,7 @@ failure produces no notification at all.
   ```
 
 
-### T8 -- A short night is a failure, no matter what the exit code says
+### [x] T8 -- A short night is a failure, no matter what the exit code says
 
 - model: glm
 - depends-on: T3, T4
@@ -388,7 +388,7 @@ fixture holding 4 start/stop pairs.
   ```
 
 
-### T7 -- Document 0.6.0 and prove the suite is green
+### [x] T7 -- Document 0.6.0 and prove the suite is green
 - model: deepseek
 - depends-on: everything
 
